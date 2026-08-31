@@ -1,0 +1,29 @@
+{
+  "name": "@charis/sdk",
+  "version": "1.0.0",
+  "description": "Charis Control Center Core Shared SDK",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsup": "^8.2.3",
+    "typescript": "^5.5.3",
+    "@types/node": "^20.14.9"
+  }
+}
