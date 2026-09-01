@@ -20,7 +20,7 @@ import NotificationsModule from '../components/modules/NotificationsModule';
 import ReportsModule from '../components/modules/ReportsModule';
 import SettingsModule from '../components/modules/SettingsModule';
 
-const API_BASE_URL = ((import.meta.env.VITE_ADMIN_BACKEND_URL || 'http://localhost:8001').replace(/\/+$/, '')) + '/api/admin';
+const API_BASE_URL = ((import.meta.env.VITE_Control_api_Backend || 'http://localhost:8001').replace(/\/+$/, '')) + '/api/admin';
 
 const AdminApp = () => {
   const [token, setToken] = useState(localStorage.getItem('admin_token'));
