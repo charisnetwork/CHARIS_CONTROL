@@ -19,7 +19,7 @@ export const ProductsList = () => {
   const { data: applications = [], isLoading } = useQuery({
     queryKey: ['applications'],
     queryFn: async () => {
-      const res = await axios.get('http://localhost:4000/api/applications');
+      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications`);
       setProducts(res.data);
       return res.data;
     }
@@ -27,7 +27,7 @@ export const ProductsList = () => {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await axios.post('http://localhost:4000/api/applications', data);
+      const res = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications`, data);
       return res.data;
     },
     onSuccess: () => {
@@ -39,7 +39,7 @@ export const ProductsList = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await axios.delete(`http://localhost:4000/api/applications/${id}`);
+      await axios.delete(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });

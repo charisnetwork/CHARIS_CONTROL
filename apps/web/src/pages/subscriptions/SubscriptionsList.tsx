@@ -29,7 +29,7 @@ export const SubscriptionsList = () => {
     queryKey: ['subscriptions', isAllApplications ? 'all' : selectedProduct?.id],
     queryFn: async () => {
       if (isAllApplications) return []; // In a real app, this might fetch platform wide or we disable it
-      const res = await axios.get(`http://localhost:4000/api/subscriptions?productId=${selectedProduct?.id}`);
+      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions?productId=${selectedProduct?.id}`);
       return res.data;
     },
     enabled: !isAllApplications && !!selectedProduct?.id

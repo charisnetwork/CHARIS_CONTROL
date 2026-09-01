@@ -12,7 +12,7 @@ export const PlansList = () => {
     queryKey: ['plans', selectedProduct?.id],
     queryFn: async () => {
       if (isAllApplications) return [];
-      const res = await axios.get(`http://localhost:4000/api/plans?productId=${selectedProduct?.id}`);
+      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/plans?productId=${selectedProduct?.id}`);
       return res.data;
     },
     enabled: !isAllApplications && !!selectedProduct?.id

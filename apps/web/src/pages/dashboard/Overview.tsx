@@ -31,7 +31,7 @@ export function Overview() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboardStats'],
     queryFn: async () => {
-      const response = await axios.get('http://localhost:4000/api/dashboard/stats');
+      const response = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/dashboard/stats`);
       return response.data;
     }
   });
