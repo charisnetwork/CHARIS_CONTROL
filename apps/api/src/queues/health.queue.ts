@@ -1,15 +1,29 @@
-import { Queue, Worker, Job } from 'bullmq';
+import { Queue, Worker, Job, ConnectionOptions } from 'bullmq';
 import Redis from 'ioredis';
 import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 import { io } from '../index';
 
 const prisma = new PrismaClient();
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
 
-export const healthQueue = new Queue('healthPing', { connection });
+let connectionConfig: ConnectionOptions = {
+  host: 'localhost',
+  port: 6379,
+  maxRetriesPerRequest: null
+};
+
+if (process.env.REDIS_URL) {
+  const url = new URL(process.env.REDIS_URL);
+  connectionConfig = {
+    host: url.hostname,
+    port: parseInt(url.port || '6379', 10),
+    password: url.password || undefined,
+    username: url.username || undefined,
+    maxRetriesPerRequest: null
+  };
+}
+
+export const healthQueue = new Queue('healthPing', { connection: connectionConfig });
 
 // Schedule a repeatable job to run every 1 minute
 healthQueue.add('pingAllApps', {}, {
@@ -20,13 +34,16 @@ healthQueue.add('pingAllApps', {}, {
 
 const worker = new Worker('healthPing', async (job: Job) => {
   if (job.name === 'pingAllApps') {
-    const products = await prisma.product.findMany({ where: { isActive: true } });
+    const applications = await prisma.application.findMany({ where: { status: 'ACTIVE' } });
     
-    for (const product of products) {
+    for (const app of applications) {
       const startTime = Date.now();
       let status = 0;
+      
+      const targetUrl = app.healthApi || `${app.apiBaseUrl}/health`;
+
       try {
-        const res = await axios.get(`${product.apiUrl}/health`, { timeout: 5000 });
+        const res = await axios.get(targetUrl, { timeout: 5000 });
         status = res.status;
       } catch (error: any) {
         status = error.response?.status || 500;
@@ -34,8 +51,8 @@ const worker = new Worker('healthPing', async (job: Job) => {
         // Emit critical alert if the API is completely down
         io.emit('system_alert', {
           type: 'error',
-          title: 'Product Offline',
-          message: `${product.name} is not responding (Status: ${status})`
+          title: 'Application Offline',
+          message: `${app.displayName} is not responding (Status: ${status})`
         });
       }
       
@@ -44,8 +61,8 @@ const worker = new Worker('healthPing', async (job: Job) => {
       // Store log in DB
       await prisma.apiLog.create({
         data: {
-          productName: product.name,
-          endpoint: '/health',
+          applicationName: app.applicationName,
+          endpoint: targetUrl,
           method: 'GET',
           statusCode: status,
           responseTime
@@ -54,13 +71,13 @@ const worker = new Worker('healthPing', async (job: Job) => {
       
       // Emit live update to dashboard
       io.emit('health_update', {
-        product: product.name,
+        product: app.applicationName,
         status,
         responseTime
       });
     }
   }
-}, { connection });
+}, { connection: connectionConfig });
 
 worker.on('failed', (job, err) => {
   console.error(`Job ${job?.id} failed with error ${err.message}`);

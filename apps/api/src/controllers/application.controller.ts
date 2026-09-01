@@ -54,7 +54,7 @@ export const createApplication = async (req: Request, res: Response) => {
 export const deleteApplication = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.application.delete({
-    where: { id }
+    where: { id: String(id) }
   });
   res.status(204).send();
 };
