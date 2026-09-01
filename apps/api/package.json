@@ -6,8 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/index.ts",
-    "build": "npx prisma generate && tsc",
-    "start": "npx prisma db push && npx prisma db seed && node dist/index.js"
+    "build": "node scripts/setup-env.js && npx prisma generate && tsc",
+    "start": "node scripts/setup-env.js && npx prisma db push && npx prisma db seed && node dist/index.js"
   },
   "keywords": [],
   "author": "",
