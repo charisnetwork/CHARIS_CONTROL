@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Plus, Download, BarChart3, TrendingUp, Users } from 'lucide-react';
 
 const AffiliatesModule = () => {
-  const [affiliates, setAffiliates] = useState([
+  const [affiliates] = useState([
     { id: '1', company: 'Digital Growth Agency', contact: 'Sarah Jenkins', email: 'sarah@dga.com', referrals: 450, activeCustomers: 310, commissionPct: 20, earnings: 450000, status: 'active' },
     { id: '2', company: 'Tech Partners India', contact: 'Rahul V.', email: 'rahul@tpi.in', referrals: 120, activeCustomers: 85, commissionPct: 15, earnings: 85000, status: 'active' },
   ]);

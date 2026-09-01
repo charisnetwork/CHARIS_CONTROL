@@ -9,7 +9,15 @@ export interface Product {
   apiBaseUrl: string;
   customerApi?: string;
   subscriptionApi?: string;
-  // other fields omitted for brevity
+  environment?: string;
+  version?: string;
+  status?: string;
+  healthApi?: string;
+  description?: string;
+  applicationName?: string;
+  couponApi?: string;
+  notificationApi?: string;
+  authenticationMethod?: string;
 }
 
 interface ProductState {

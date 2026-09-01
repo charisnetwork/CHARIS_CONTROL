@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useProductStore } from "../../store/productStore";
 import { Plus, Trash2, Calendar, Image as ImageIcon } from 'lucide-react';
 
 const OffersModule = () => {
-  const { selectedProduct, isAllApplications } = useProductStore();
-  const [offers, setOffers] = useState([
+  useProductStore();
+  const [offers] = useState([
     { id: '1', title: 'Diwali Festival Bonanza', description: 'Get 50% off on all Yearly Plans', startDate: '2026-10-15', endDate: '2026-11-05', status: 'upcoming' },
     { id: '2', title: 'Welcome Offer', description: 'Flat ₹1000 off for new signups', startDate: '2025-01-01', endDate: '2027-12-31', status: 'active' },
   ]);

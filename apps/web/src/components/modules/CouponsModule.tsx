@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useProductStore } from "../../store/productStore";
-import { Plus, Trash2, Tag, Globe, BarChart3 } from 'lucide-react';
+import { Plus, Trash2, BarChart3 } from 'lucide-react';
 
 const CouponsModule = () => {
-  const { selectedProduct, isAllApplications } = useProductStore();
-  const [coupons, setCoupons] = useState([
+  useProductStore();
+  const [coupons] = useState([
     { id: '1', code: 'SUMMER50', discountType: 'percentage', discountValue: 50, usageCount: 45, maxUses: 100, isActive: true, expiresAt: '2026-08-01' },
     { id: '2', code: 'WELCOME1000', discountType: 'flat', discountValue: 1000, usageCount: 120, maxUses: null, isActive: true, expiresAt: null },
     { id: '3', code: 'EXPIRED20', discountType: 'percentage', discountValue: 20, usageCount: 500, maxUses: 500, isActive: false, expiresAt: '2025-12-31' },

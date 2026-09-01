@@ -1,16 +1,16 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useProductStore } from "../../store/productStore";
-import { Plus, Edit, Trash2, Shield, Check } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
 
 const SubscriptionsModule = () => {
   const { selectedProduct, isAllApplications } = useProductStore();
-  const [plans, setPlans] = useState([
+  const [plans] = useState([
     { id: '1', planName: 'Free', monthlyPrice: 0, yearlyPrice: 0, trialDays: 14, maxUsers: 1, maxStorage: 50, maxBranches: 1, isActive: true },
     { id: '2', planName: 'Premium', monthlyPrice: 999, yearlyPrice: 9999, trialDays: 0, maxUsers: 5, maxStorage: 500, maxBranches: 3, isActive: true },
     { id: '3', planName: 'Enterprise', monthlyPrice: 2999, yearlyPrice: 29999, trialDays: 0, maxUsers: 50, maxStorage: 5000, maxBranches: 10, isActive: true },
   ]);
 
-  const [showModal, setShowModal] = useState(false);
+  const [, setShowModal] = useState(false);
 
   return (
     <div className="space-y-6">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useProductStore } from '../store/productStore';
 import type { Product } from '../store/productStore';
-import { Package, Globe, Plus, Server, Activity, ArrowRight, X } from 'lucide-react';
+import { Package, Globe, Plus, Server, ArrowRight, X } from 'lucide-react';
 
 interface Props {
   api: any;

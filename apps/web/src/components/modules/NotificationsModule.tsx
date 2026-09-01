@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useProductStore } from "../../store/productStore";
-import { Plus, Trash2, Send, Bell, Mail, Smartphone } from 'lucide-react';
+import { Trash2, Send, Bell, Mail, Smartphone } from 'lucide-react';
 
 const NotificationsModule = () => {
   const { selectedProduct, isAllApplications } = useProductStore();
-  const [notifications, setNotifications] = useState([
+  const [notifications] = useState([
     { id: '1', title: 'System Maintenance', message: 'The servers will be down for 30 minutes tonight at 2 AM.', targetAudience: 'All Users', type: 'in_app', priority: 'high', sentAt: '2026-07-22T10:00:00Z' },
     { id: '2', title: 'Welcome to Version 2.0', message: 'Check out the new features we just launched!', targetAudience: 'Premium Only', type: 'email', priority: 'normal', sentAt: '2026-07-20T10:00:00Z' },
   ]);

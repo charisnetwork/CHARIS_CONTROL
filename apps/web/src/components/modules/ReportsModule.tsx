@@ -1,6 +1,6 @@
-import React from "react";
+
 import { useProductStore } from "../../store/productStore";
-import { FileText, Download, Calendar, Filter, PieChart } from 'lucide-react';
+import { FileText, Download, PieChart } from 'lucide-react';
 
 const ReportsModule = () => {
   const { selectedProduct, isAllApplications } = useProductStore();

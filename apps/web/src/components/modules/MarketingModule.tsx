@@ -1,9 +1,9 @@
-import React, { useState } from "react";
-import { Plus, BarChart3, TrendingUp, DollarSign } from 'lucide-react';
+import { useState } from "react";
+import { Plus, TrendingUp, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const MarketingModule = () => {
-  const [campaigns, setCampaigns] = useState([
+  const [campaigns] = useState([
     { id: '1', name: 'Q3 Software Expansion', platform: 'Google Ads', budget: 50000, spent: 32000, clicks: 12050, leads: 850, conversions: 120, revenue: 1200000, status: 'active' },
     { id: '2', name: 'Retargeting Flow', platform: 'Facebook', budget: 20000, spent: 19500, clicks: 8000, leads: 400, conversions: 80, revenue: 800000, status: 'active' },
   ]);

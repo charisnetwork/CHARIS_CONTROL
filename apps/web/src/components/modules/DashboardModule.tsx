@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useProductStore } from "../../store/productStore";
 import { fetchProductDashboardSummary } from "../../services/productApi";
 import { Users, DollarSign, CreditCard, Ticket, Activity, RefreshCw } from 'lucide-react';

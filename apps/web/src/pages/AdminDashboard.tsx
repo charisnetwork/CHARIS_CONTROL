@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
-  LayoutDashboard, Globe, Tag, Megaphone, DollarSign, 
-  TrendingUp, TrendingDown, Shield, LogOut, Search, Filter,
-  Users, CreditCard, Calendar, BarChart3, Plus, Trash2, Edit, ChevronRight, ExternalLink, Download, Clock,
-  Settings, Briefcase, FileText, Bell, Percent, Building
+  LayoutDashboard, Globe, Tag, Megaphone, 
+  Shield, LogOut,
+  Users, CreditCard, ChevronRight,
+  Settings, FileText, Bell, Percent
 } from 'lucide-react';
 import Login from './AdminLogin';
 import { useProductStore } from '../store/productStore';
@@ -24,7 +24,7 @@ const API_BASE_URL = ((import.meta.env.VITE_ADMIN_BACKEND_URL || 'http://localho
 
 const AdminApp = () => {
   const [token, setToken] = useState(localStorage.getItem('admin_token'));
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
 

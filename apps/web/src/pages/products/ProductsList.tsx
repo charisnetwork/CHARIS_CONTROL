@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useProductStore } from '../../store/productStore';
 import { Plus, Package, Globe, Key, Link as LinkIcon, Trash2 } from 'lucide-react';
-import { cn } from '../../layouts/DashboardLayout';
+
 
 export const ProductsList = () => {
   const queryClient = useQueryClient();

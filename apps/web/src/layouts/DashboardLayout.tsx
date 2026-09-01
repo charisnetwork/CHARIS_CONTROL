@@ -7,7 +7,6 @@ import {
   Ticket,
   Bell,
   Activity,
-  FileText,
   BarChart3,
   Search,
   Settings,

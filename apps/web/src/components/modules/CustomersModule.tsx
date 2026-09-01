@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useProductStore } from "../../store/productStore";
 import { fetchProductCustomers } from "../../services/productApi";
 import { Download, Search, RefreshCw, Filter } from 'lucide-react';
