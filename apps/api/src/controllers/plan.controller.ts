@@ -20,9 +20,14 @@ export const getPlans = async (req: Request, res: Response) => {
 };
 
 export const createPlan = async (req: Request, res: Response) => {
-  // Plan creation should now ideally be routed to the external application or handled
-  // as part of the centralized metadata model, but to satisfy the external contract:
-  res.status(501).json({ message: 'Plan creation via Control Center is disabled. Manage plans natively or synchronize them.' });
+  const { name, code, description, subscriptionModelId, order, pricingMatrix, isActive } = req.body;
+  if (!name || !code || !subscriptionModelId) {
+    throw new AppError('name, code, and subscriptionModelId are required', 400);
+  }
+  const newPlan = await prisma.plan.create({
+    data: { name, code, description, subscriptionModelId, order, pricingMatrix, isActive }
+  });
+  res.status(201).json(newPlan);
 };
 
 export const updatePlan = async (req: Request, res: Response) => {

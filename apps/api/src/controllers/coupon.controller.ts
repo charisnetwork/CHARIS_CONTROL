@@ -1,36 +1,33 @@
 import { Request, Response } from 'express';
-import { getMockData, updateMockData } from '../services/mockDataGenerator';
-import { v4 as uuidv4 } from 'uuid';
+import { prisma } from '../lib/prisma';
+import { AppError } from '../middlewares/error.middleware';
 
 export const getCoupons = async (req: Request, res: Response) => {
-  const { productId } = req.query;
-  if (!productId) {
-    res.status(400).json({ message: 'productId is required' });
-    return;
-  }
-  
-  const db = getMockData(productId as string);
-  res.json(db.coupons || []);
+  const { applicationId } = req.query;
+  const where = applicationId ? { applicationId: String(applicationId) } : {};
+  const coupons = await prisma.coupon.findMany({ where, orderBy: { createdAt: 'desc' } });
+  res.json(coupons);
 };
 
 export const createCoupon = async (req: Request, res: Response) => {
-  const { productId, code, discountType, discountValue, usageLimit, expiryDate } = req.body;
-  if (!productId) {
-    res.status(400).json({ message: 'productId is required' });
-    return;
-  }
-
-  const newCoupon = {
-    id: uuidv4(),
-    code,
-    discountType,
-    discountValue,
-    usageLimit,
-    usesCount: 0,
-    isActive: true,
-    expiryDate
-  };
-
-  updateMockData(productId, 'coupons', newCoupon);
+  const { code, applicationId, discountType, discountValue, maxUses, expiresAt, applicablePlans, isActive } = req.body;
+  const newCoupon = await prisma.coupon.create({
+    data: {
+      code,
+      applicationId,
+      discountType,
+      discountValue: Number(discountValue),
+      maxUses: maxUses ? Number(maxUses) : null,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      applicablePlans: applicablePlans ? JSON.stringify(applicablePlans) : "[]",
+      isActive: isActive !== undefined ? isActive : true
+    }
+  });
   res.status(201).json(newCoupon);
+};
+
+export const deleteCoupon = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  await prisma.coupon.delete({ where: { id } });
+  res.status(204).send();
 };

@@ -44,9 +44,14 @@ export function CustomersList() {
 
   return (
     <div className="space-y-6 w-full">
-      <div>
-        <h2 className="text-2xl font-semibold text-white tracking-tight">Customers</h2>
-        <p className="text-gray-400 text-sm mt-1">Aggregated view of customers across all SaaS products.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-white tracking-tight">Customers</h2>
+          <p className="text-gray-400 text-sm mt-1">Aggregated view of customers across all SaaS products.</p>
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg hover:border-primary transition-colors text-white text-sm font-medium">
+          Filter by Product
+        </button>
       </div>
       <DataTable columns={columns} data={mockCustomers} pageSize={10} />
     </div>

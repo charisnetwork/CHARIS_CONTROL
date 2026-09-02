@@ -13,6 +13,13 @@ import { Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import axios from 'axios';
 
+import { CustomersList } from './pages/customers/CustomersList';
+import { CouponsList } from './pages/coupons/CouponsList';
+import { OffersList } from './pages/offers/OffersList';
+import { MarketingList } from './pages/marketing/MarketingList';
+import { NotificationsList } from './pages/notifications/NotificationsList';
+import { ReportsList } from './pages/reports/ReportsList';
+
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = useAuthStore((state) => state.token);
   if (!token) {
@@ -58,8 +65,31 @@ const router = createBrowserRouter([
       {
         path: "products",
         element: <ProductsList />
+      },
+      {
+        path: "customers",
+        element: <CustomersList />
+      },
+      {
+        path: "coupons",
+        element: <CouponsList />
+      },
+      {
+        path: "offers",
+        element: <OffersList />
+      },
+      {
+        path: "marketing",
+        element: <MarketingList />
+      },
+      {
+        path: "notifications",
+        element: <NotificationsList />
+      },
+      {
+        path: "reports",
+        element: <ReportsList />
       }
-      // Other routes like customers, coupons, etc. can be added here
     ],
   },
   {

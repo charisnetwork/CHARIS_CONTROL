@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import type { FormEvent } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useProductStore } from '../../store/productStore';
-import { Search, Filter, Download, Plus, AlertCircle, ArrowUpRight } from 'lucide-react';
+import { Search, Filter, Download, Plus, AlertCircle, X, MoreVertical } from 'lucide-react';
 import { cn } from '../../layouts/DashboardLayout';
 
 const StatusBadge = ({ status }: { status: string }) => {
@@ -24,6 +25,23 @@ const StatusBadge = ({ status }: { status: string }) => {
 export const SubscriptionsList = () => {
   const { selectedProduct, isAllApplications } = useProductStore();
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const queryClient = useQueryClient();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    customerName: '',
+    customerEmail: '',
+    planId: '',
+    billingCycle: 'monthly'
+  });
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const closeDropdown = () => setActiveDropdown(null);
+    document.addEventListener('click', closeDropdown);
+    return () => document.removeEventListener('click', closeDropdown);
+  }, []);
 
   const { data: subscriptions = [], isLoading } = useQuery({
     queryKey: ['subscriptions', isAllApplications ? 'all' : selectedProduct?.id],
@@ -33,6 +51,35 @@ export const SubscriptionsList = () => {
       return res.data;
     },
     enabled: !isAllApplications && !!selectedProduct?.id
+  });
+
+  const { data: plans = [] } = useQuery({
+    queryKey: ['plans', selectedProduct?.id],
+    queryFn: async () => {
+      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/plans?productId=${selectedProduct?.id}`);
+      return res.data;
+    },
+    enabled: !!selectedProduct?.id && isModalOpen
+  });
+
+  const createSubMutation = useMutation({
+    mutationFn: async (newSub: any) => {
+      return axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions`, { ...newSub, productId: selectedProduct?.id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscriptions', selectedProduct?.id] });
+      setIsModalOpen(false);
+      setFormData({ customerName: '', customerEmail: '', planId: '', billingCycle: 'monthly' });
+    }
+  });
+
+  const updateSubMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      return axios.put(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscriptions', selectedProduct?.id] });
+    }
   });
 
   if (isAllApplications) {
@@ -54,6 +101,30 @@ export const SubscriptionsList = () => {
     sub.customerEmail.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const handleExport = () => {
+    const headers = ['Customer Name', 'Email', 'Plan', 'Billing Cycle', 'Price', 'Status', 'Next Renewal'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredSubs.map((sub: any) => 
+        `"${sub.customerName}","${sub.customerEmail}","${sub.planName}","${sub.billingCycle}","${sub.price}","${sub.status}","${new Date(sub.nextRenewalDate).toLocaleDateString()}"`
+      )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `subscriptions_${selectedProduct?.displayName || 'export'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    createSubMutation.mutate(formData);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -63,10 +134,10 @@ export const SubscriptionsList = () => {
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button className="flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] px-4 py-2 rounded-lg text-sm font-medium hover:border-[var(--primary)] transition-colors text-[var(--text-secondary)] hover:text-white">
+          <button onClick={handleExport} className="flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] px-4 py-2 rounded-lg text-sm font-medium hover:border-[var(--primary)] transition-colors text-[var(--text-secondary)] hover:text-white">
             <Download className="w-4 h-4" /> Export
           </button>
-          <button className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
             <Plus className="w-4 h-4" /> Create Plan
           </button>
         </div>
@@ -131,9 +202,35 @@ export const SubscriptionsList = () => {
                       {new Date(sub.nextRenewalDate).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors">
-                        <ArrowUpRight className="w-4 h-4" />
-                      </button>
+                      <div className="relative inline-block text-left" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setActiveDropdown(activeDropdown === sub.id ? null : sub.id)} className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors">
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {activeDropdown === sub.id && (
+                          <div className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none py-1">
+                            <button 
+                              onClick={() => { updateSubMutation.mutate({ id: sub.id, data: { action: 'upgrade' } }); setActiveDropdown(null); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white">
+                              Upgrade Plan
+                            </button>
+                            <button 
+                              onClick={() => { updateSubMutation.mutate({ id: sub.id, data: { action: 'downgrade' } }); setActiveDropdown(null); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white">
+                              Downgrade Plan
+                            </button>
+                            <button 
+                              onClick={() => { updateSubMutation.mutate({ id: sub.id, data: { action: 'extend' } }); setActiveDropdown(null); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white">
+                              Extend Renewal
+                            </button>
+                            <button 
+                              onClick={() => { updateSubMutation.mutate({ id: sub.id, data: { status: 'CANCELLED' } }); setActiveDropdown(null); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-rose-500 hover:bg-rose-500/10 hover:text-rose-400">
+                              Cancel Subscription
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -151,6 +248,57 @@ export const SubscriptionsList = () => {
           </div>
         </div>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)]">
+              <h2 className="text-xl font-bold text-white">Create Subscription</h2>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Customer Name</label>
+                <input required type="text" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Customer Email</label>
+                <input required type="email" value={formData.customerEmail} onChange={e => setFormData({...formData, customerEmail: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Plan</label>
+                <select required value={formData.planId} onChange={e => setFormData({...formData, planId: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="" disabled>Select a plan</option>
+                  {plans.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.name} - ₹{p.monthlyPrice}/mo</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Billing Cycle</label>
+                <select required value={formData.billingCycle} onChange={e => setFormData({...formData, billingCycle: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6 mt-2">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={createSubMutation.isPending} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50">
+                  Create Subscription
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

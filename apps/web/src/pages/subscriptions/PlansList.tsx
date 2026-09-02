@@ -1,12 +1,27 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import type { FormEvent } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useProductStore } from '../../store/productStore';
-import { Plus, AlertCircle, Edit2, Archive, Copy, CheckCircle } from 'lucide-react';
+import { Plus, AlertCircle, Edit2, Archive, Copy, CheckCircle, X, Trash2 } from 'lucide-react';
 
 export const PlansList = () => {
   const { selectedProduct, isAllApplications } = useProductStore();
   const [searchTerm] = useState('');
+  const queryClient = useQueryClient();
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<any>(null);
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    maxUsers: 1,
+    maxStorageGb: 1,
+    features: ['']
+  });
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ['plans', selectedProduct?.id],
@@ -17,6 +32,79 @@ export const PlansList = () => {
     },
     enabled: !isAllApplications && !!selectedProduct?.id
   });
+
+  const createPlanMutation = useMutation({
+    mutationFn: async (newPlan: any) => {
+      return axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/plans`, { ...newPlan, productId: selectedProduct?.id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans', selectedProduct?.id] });
+      closeModal();
+    }
+  });
+
+  const updatePlanMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      return axios.put(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/plans/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans', selectedProduct?.id] });
+      closeModal();
+    }
+  });
+
+  const archivePlanMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return axios.put(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/plans/${id}`, { isActive: false });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans', selectedProduct?.id] });
+    }
+  });
+
+  const openModal = (plan: any = null) => {
+    if (plan) {
+      setEditingPlan(plan);
+      setFormData({
+        name: plan.name || '',
+        description: plan.description || '',
+        monthlyPrice: plan.monthlyPrice || 0,
+        yearlyPrice: plan.yearlyPrice || 0,
+        maxUsers: plan.maxUsers || 1,
+        maxStorageGb: plan.maxStorageGb || 1,
+        features: plan.features?.length ? [...plan.features] : ['']
+      });
+    } else {
+      setEditingPlan(null);
+      setFormData({
+        name: '', description: '', monthlyPrice: 0, yearlyPrice: 0, maxUsers: 1, maxStorageGb: 1, features: ['']
+      });
+    }
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingPlan(null);
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (editingPlan) {
+      updatePlanMutation.mutate({ id: editingPlan.id, data: formData });
+    } else {
+      createPlanMutation.mutate(formData);
+    }
+  };
+
+  const handleFeatureChange = (index: number, value: string) => {
+    const newFeatures = [...formData.features];
+    newFeatures[index] = value;
+    setFormData({ ...formData, features: newFeatures });
+  };
+
+  const addFeature = () => setFormData({ ...formData, features: [...formData.features, ''] });
+  const removeFeature = (index: number) => setFormData({ ...formData, features: formData.features.filter((_, i) => i !== index) });
 
   if (isAllApplications) {
     return (
@@ -45,7 +133,7 @@ export const PlansList = () => {
           <p className="text-slate-400 text-sm">Manage pricing and entitlements for {selectedProduct?.displayName}.</p>
         </div>
         
-        <button className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+        <button onClick={() => openModal()} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
           <Plus className="w-4 h-4" /> Create New Plan
         </button>
       </div>
@@ -94,13 +182,13 @@ export const PlansList = () => {
                 </ul>
                 
                 <div className="flex items-center gap-2 pt-4 border-t border-[var(--border-color)]">
-                  <button className="flex-1 flex justify-center items-center gap-2 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-medium hover:bg-slate-800 text-slate-300 transition-colors">
+                  <button onClick={() => openModal(plan)} className="flex-1 flex justify-center items-center gap-2 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-medium hover:bg-slate-800 text-slate-300 transition-colors">
                     <Edit2 className="w-4 h-4" /> Edit
                   </button>
                   <button className="p-2 rounded-lg border border-[var(--border-color)] hover:bg-slate-800 text-slate-400 transition-colors">
                     <Copy className="w-4 h-4" />
                   </button>
-                  <button className="p-2 rounded-lg border border-[var(--border-color)] hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/20 text-slate-400 transition-colors">
+                  <button onClick={() => archivePlanMutation.mutate(plan.id)} className="p-2 rounded-lg border border-[var(--border-color)] hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/20 text-slate-400 transition-colors" title={plan.isActive ? "Archive Plan" : "Already Archived"}>
                     <Archive className="w-4 h-4" />
                   </button>
                 </div>
@@ -109,6 +197,83 @@ export const PlansList = () => {
           ))
         )}
       </div>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center p-6 border-b border-[var(--border-color)] sticky top-0 bg-[var(--bg-card)] z-10">
+              <h2 className="text-xl font-bold text-white">{editingPlan ? 'Edit Plan' : 'Create New Plan'}</h2>
+              <button onClick={closeModal} className="text-slate-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Plan Name</label>
+                  <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Description</label>
+                  <input required type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Monthly Price (₹)</label>
+                  <input required type="number" min="0" value={formData.monthlyPrice} onChange={e => setFormData({...formData, monthlyPrice: Number(e.target.value)})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Yearly Price (₹)</label>
+                  <input required type="number" min="0" value={formData.yearlyPrice} onChange={e => setFormData({...formData, yearlyPrice: Number(e.target.value)})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Max Users</label>
+                  <input required type="number" min="1" value={formData.maxUsers} onChange={e => setFormData({...formData, maxUsers: Number(e.target.value)})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-300">Max Storage (GB)</label>
+                  <input required type="number" min="1" value={formData.maxStorageGb} onChange={e => setFormData({...formData, maxStorageGb: Number(e.target.value)})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-[var(--border-color)]">
+                <label className="text-sm font-medium text-slate-300 flex justify-between items-center">
+                  Features
+                  <button type="button" onClick={addFeature} className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-1 rounded hover:bg-indigo-500/30">
+                    + Add Feature
+                  </button>
+                </label>
+                {formData.features.map((feature, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={feature} 
+                      onChange={e => handleFeatureChange(i, e.target.value)} 
+                      placeholder="e.g. Advanced Reporting"
+                      className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                    {formData.features.length > 1 && (
+                      <button type="button" onClick={() => removeFeature(i)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6 sticky bottom-0 bg-[var(--bg-card)] pb-2">
+                <button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={createPlanMutation.isPending || updatePlanMutation.isPending} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50">
+                  {editingPlan ? 'Save Changes' : 'Create Plan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

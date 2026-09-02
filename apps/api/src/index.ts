@@ -14,6 +14,11 @@ import applicationRoutes from './routes/application.routes';
 import syncRoutes from './routes/sync.routes';
 import userRoutes from './routes/user.routes';
 import entitlementRoutes from './routes/entitlement.routes';
+import offerRoutes from './routes/offer.routes';
+import marketingRoutes from './routes/marketing.routes';
+import notificationRoutes from './routes/notification.routes';
+import reportRoutes from './routes/report.routes';
+import customerRoutes from './routes/customer.routes';
 import { WebhookService } from './services/webhook.service';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -66,6 +71,11 @@ app.use('/api/applications', applicationRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/entitlements', entitlementRoutes);
+app.use('/api/offers', offerRoutes);
+app.use('/api/marketing', marketingRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/customers', customerRoutes);
 
 // Use error handler middleware
 app.use(errorHandler);
