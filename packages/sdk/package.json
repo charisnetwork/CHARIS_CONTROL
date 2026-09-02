@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "npm run build && node --test test/*.test.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -22,8 +23,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "tsup": "^8.2.3",
-    "typescript": "^5.5.3",
-    "@types/node": "^20.14.9"
+    "typescript": "^5.5.3"
   }
 }

@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 import { externalAppRequest } from '../services/integrationService';
 import { AppError } from '../middlewares/error.middleware';
-
-const prisma = new PrismaClient();
 
 export const getPlans = async (req: Request, res: Response) => {
   const { productId } = req.query;
@@ -28,5 +26,84 @@ export const createPlan = async (req: Request, res: Response) => {
 };
 
 export const updatePlan = async (req: Request, res: Response) => {
-  res.status(501).json({ message: 'Plan updates via Control Center are disabled.' });
+  const id = req.params.id as string;
+  const { name, description, order, pricingMatrix, isActive } = req.body;
+
+  const plan = await prisma.plan.findUnique({ where: { id } });
+  if (!plan) throw new AppError('Plan not found', 404);
+
+  const updatedPlan = await prisma.plan.update({
+    where: { id },
+    data: { name, description, order, pricingMatrix, isActive }
+  });
+
+  const subs = await prisma.subscriptionReference.findMany({
+    where: { planId: id },
+    include: { application: true }
+  });
+
+  import('../services/webhook.service').then(({ WebhookService }) => {
+    subs.forEach(sub => {
+      WebhookService.dispatch(sub.application, 'PLAN_CHANGED', { subscriptionId: sub.id, plan: updatedPlan });
+    });
+  });
+
+  res.json(updatedPlan);
 };
+
+export const updateFeature = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const { name, code, description, category } = req.body;
+
+  const feature = await prisma.feature.findUnique({ where: { id } });
+  if (!feature) throw new AppError('Feature not found', 404);
+
+  const updatedFeature = await prisma.feature.update({
+    where: { id },
+    data: { name, code, description, category }
+  });
+
+  const plans = await prisma.plan.findMany({
+    where: { subscriptionModelId: feature.subscriptionModelId },
+    include: { subscriptionReferences: { include: { application: true } } }
+  });
+
+  import('../services/webhook.service').then(({ WebhookService }) => {
+    plans.forEach(plan => {
+      plan.subscriptionReferences.forEach(sub => {
+        WebhookService.dispatch(sub.application, 'FEATURE_CHANGED', { subscriptionId: sub.id, feature: updatedFeature });
+      });
+    });
+  });
+
+  res.json(updatedFeature);
+};
+
+export const updateFeatureLimit = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const { type, value, errorMessage } = req.body;
+
+  const rule = await prisma.validationRule.findUnique({ where: { id }, include: { featureField: { include: { feature: true } } } });
+  if (!rule) throw new AppError('Validation rule not found', 404);
+
+  const updatedRule = await prisma.validationRule.update({
+    where: { id },
+    data: { type, value, errorMessage }
+  });
+
+  const plans = await prisma.plan.findMany({
+    where: { subscriptionModelId: rule.featureField.feature.subscriptionModelId },
+    include: { subscriptionReferences: { include: { application: true } } }
+  });
+
+  import('../services/webhook.service').then(({ WebhookService }) => {
+    plans.forEach(plan => {
+      plan.subscriptionReferences.forEach(sub => {
+        WebhookService.dispatch(sub.application, 'LIMIT_CHANGED', { subscriptionId: sub.id, rule: updatedRule });
+      });
+    });
+  });
+
+  res.json(updatedRule);
+};
+

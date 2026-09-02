@@ -1,15 +1,17 @@
 import { Request, Response } from 'express';
-import { PrismaClient, ApplicationEnvironment, ApplicationStatus } from '@prisma/client';
+import { ApplicationEnvironment, ApplicationStatus } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware';
 import crypto from 'crypto';
+import { prisma } from '../lib/prisma';
+import { applicationMetadata } from '../services/applicationResponse.service';
+import { assertSafePublicUrl } from '../services/urlSafety.service';
 
-const prisma = new PrismaClient();
 
 export const getApplications = async (req: Request, res: Response) => {
   const applications = await prisma.application.findMany({
     orderBy: { displayName: 'asc' }
   });
-  res.json(applications);
+  res.json(applications.map(applicationMetadata));
 };
 
 export const createApplication = async (req: Request, res: Response) => {
@@ -36,6 +38,8 @@ export const createApplication = async (req: Request, res: Response) => {
     throw new AppError('Application with this name already exists', 409);
   }
 
+  await assertSafePublicUrl(apiBaseUrl, 'apiBaseUrl');
+
   const application = await prisma.application.create({
     data: {
       applicationName,
@@ -48,7 +52,7 @@ export const createApplication = async (req: Request, res: Response) => {
     }
   });
 
-  res.status(201).json(application);
+  res.status(201).json(applicationMetadata(application));
 };
 
 export const deleteApplication = async (req: Request, res: Response) => {
@@ -57,4 +61,39 @@ export const deleteApplication = async (req: Request, res: Response) => {
     where: { id: String(id) }
   });
   res.status(204).send();
+};
+
+export const regenerateKeys = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: {
+      type: 'spki',
+      format: 'pem'
+    },
+    privateKeyEncoding: {
+      type: 'pkcs8',
+      format: 'pem'
+    }
+  });
+
+  const updated = await prisma.application.update({
+    where: { id: String(id) },
+    data: { publicKey, privateKey }
+  });
+
+  res.json({ message: 'Signing keys regenerated', publicKey: updated.publicKey });
+};
+
+export const regenerateWebhookSecret = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const webhookSecret = crypto.randomBytes(32).toString('hex');
+  
+  const updated = await prisma.application.update({
+    where: { id: String(id) },
+    data: { webhookSecret }
+  });
+
+  res.json({ message: 'Webhook secret regenerated' });
 };

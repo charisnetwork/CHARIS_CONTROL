@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 apps/api/prisma/seed.js
+*.tsbuildinfo
+coverage/
+.DS_Store

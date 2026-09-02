@@ -7,12 +7,19 @@ import { CharisLogger } from './logger';
 import { CharisFeatureFlags } from './featureFlags';
 import { CharisNotifications } from './notifications';
 import { CharisMonitoring } from './monitoring';
+import { EntitlementManager } from './entitlements';
+
+export * from './entitlements';
 
 export interface CharisSDKConfig {
   productId: string;
   apiKey: string;
   environment?: string;
   gatewayUrl?: string;
+  /** Immutable Control Centre Application UUID. */
+  applicationId?: string;
+  publicKey?: string;
+  webhookSecret?: string;
 }
 
 export class CharisClient {
@@ -23,6 +30,7 @@ export class CharisClient {
   public featureFlags!: CharisFeatureFlags;
   public notifications!: CharisNotifications;
   public monitoring!: CharisMonitoring;
+  public entitlements!: EntitlementManager;
   public http!: AxiosInstance;
   public productId!: string;
 
@@ -46,6 +54,10 @@ export class CharisClient {
     this.featureFlags = new CharisFeatureFlags(client);
     this.notifications = new CharisNotifications(client);
     this.monitoring = new CharisMonitoring();
+    
+    if (config.publicKey && config.webhookSecret && config.applicationId) {
+      this.entitlements = new EntitlementManager(config.applicationId, config.publicKey, config.webhookSecret, client);
+    }
 
     this.initialized = true;
 

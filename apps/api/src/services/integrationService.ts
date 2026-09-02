@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { AppError } from '../middlewares/error.middleware';
+import { assertSafePublicUrl } from './urlSafety.service';
 
 /**
  * Make a secure request to an external application
@@ -10,7 +11,9 @@ export const externalAppRequest = async (
   endpoint: string
 ) => {
   try {
-    const response = await axios.get(`${apiBaseUrl}${endpoint}`, {
+    const base = await assertSafePublicUrl(apiBaseUrl, 'Application API URL');
+    const target = new URL(endpoint, base).toString();
+    const response = await axios.get(target, {
       headers: {
         'x-api-key': apiKey,
         'Content-Type': 'application/json'
@@ -20,7 +23,7 @@ export const externalAppRequest = async (
     
     return response.data;
   } catch (error: any) {
-    console.error(`External request failed: ${apiBaseUrl}${endpoint}`, error.message);
+    console.error(`External application request failed: ${error.message}`);
     
     // Pass standard axios errors to our custom AppError
     if (error.response) {

@@ -2,8 +2,185 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useProductStore } from '../../store/productStore';
-import { Plus, Package, Globe, Key, Link as LinkIcon, Trash2 } from 'lucide-react';
+import { Plus, Package, Globe, Link as LinkIcon, Trash2, Copy, Eye, EyeOff, Shield, RefreshCw, ChevronDown } from 'lucide-react';
 
+const CredentialRow = ({ label, value, onCopy }: { label: string, value: string, onCopy: () => void }) => (
+  <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-3 rounded-lg flex items-center justify-between group hover:border-indigo-500/30 transition-colors">
+    <div className="flex-1 overflow-hidden">
+      <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">{label}</div>
+      <div className="font-mono text-xs text-slate-300 truncate pr-4">
+        {value || 'Not configured'}
+      </div>
+    </div>
+    <button 
+      onClick={onCopy}
+      className="p-1.5 text-slate-400 hover:text-indigo-400 bg-[var(--bg-secondary)] hover:bg-indigo-500/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+      title="Copy to Clipboard"
+    >
+      <Copy className="w-4 h-4" />
+    </button>
+  </div>
+);
+
+const ApplicationCard = ({ app, deleteMutation }: { app: any, deleteMutation: any }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'integration'>('overview');
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
+  const queryClient = useQueryClient();
+
+  const rotateKeys = useMutation({
+    mutationFn: async () => {
+      await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications/${app.id}/keys`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['applications'] })
+  });
+
+  const rotateWebhook = useMutation({
+    mutationFn: async () => {
+      await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications/${app.id}/webhook-secret`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['applications'] })
+  });
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  return (
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl overflow-hidden transition-all duration-300 shadow-sm hover:shadow-indigo-500/10 hover:border-indigo-500/30">
+        <div className="p-5 flex items-start justify-between group hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={() => setExpanded(!expanded)}>
+          <div className="flex gap-4">
+             <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+               <Package className="w-6 h-6" />
+             </div>
+             <div>
+               <h3 className="text-white font-bold text-lg leading-tight flex items-center gap-2">
+                 {app.displayName}
+                 <span className={`transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>
+                   <ChevronDown className="w-4 h-4 text-slate-500" />
+                 </span>
+               </h3>
+               <div className="text-slate-500 text-xs font-mono mb-2">{app.applicationName}</div>
+               
+               <div className="flex items-center gap-2 text-xs text-slate-400 bg-[var(--bg-secondary)] px-2 py-1 rounded w-fit border border-[var(--border-color)]">
+                 <Globe className="w-3 h-3 text-emerald-500" /> {app.apiBaseUrl}
+               </div>
+             </div>
+          </div>
+          
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Are you sure you want to delete ${app.displayName}?`)) {
+                deleteMutation.mutate(app.id);
+              }
+            }}
+            className="text-slate-500 hover:text-rose-500 p-2 rounded hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+
+        {expanded && (
+          <div className="border-t border-[var(--border-color)] bg-[var(--bg-secondary)]/50 p-5 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex gap-4 mb-4 border-b border-[var(--border-color)] pb-2">
+              <button 
+                onClick={() => setActiveTab('overview')}
+                className={`text-sm font-medium px-1 pb-2 border-b-2 transition-colors ${activeTab === 'overview' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+              >
+                Overview
+              </button>
+              <button 
+                onClick={() => setActiveTab('integration')}
+                className={`text-sm font-medium px-1 pb-2 border-b-2 transition-colors ${activeTab === 'integration' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+              >
+                Developer Integration
+              </button>
+            </div>
+
+            {activeTab === 'overview' && (
+              <div className="space-y-4 text-sm text-slate-300">
+                <p>{app.description || 'No description provided.'}</p>
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="bg-[var(--bg-card)] p-3 rounded-lg border border-[var(--border-color)]">
+                    <div className="text-xs text-slate-500 mb-1 uppercase font-bold">Environment</div>
+                    <div className="flex items-center gap-2">
+                       <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse"></span>
+                       {app.environment || 'PRODUCTION'}
+                    </div>
+                  </div>
+                  <div className="bg-[var(--bg-card)] p-3 rounded-lg border border-[var(--border-color)]">
+                    <div className="text-xs text-slate-500 mb-1 uppercase font-bold">Status</div>
+                    <div>{app.status || 'ACTIVE'}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'integration' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-400" />
+                    API Credentials
+                  </h4>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => rotateKeys.mutate()}
+                      disabled={rotateKeys.isPending}
+                      className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${rotateKeys.isPending ? 'animate-spin' : ''}`} />
+                      Rotate Keys
+                    </button>
+                    <button 
+                      onClick={() => rotateWebhook.mutate()}
+                      disabled={rotateWebhook.isPending}
+                      className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${rotateWebhook.isPending ? 'animate-spin' : ''}`} />
+                      Rotate Webhook
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3">
+                  <CredentialRow label="API Key" value={app.apiKey} onCopy={() => copyToClipboard(app.apiKey)} />
+                  <CredentialRow label="Public Key" value={app.publicKey} onCopy={() => copyToClipboard(app.publicKey)} />
+                  <CredentialRow label="Webhook URL" value={app.webhookUrl || 'Not configured'} onCopy={() => app.webhookUrl && copyToClipboard(app.webhookUrl)} />
+                  
+                  <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-3 rounded-lg flex items-center justify-between group hover:border-indigo-500/30 transition-colors">
+                    <div className="flex-1 overflow-hidden">
+                      <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Webhook Secret</div>
+                      <div className="font-mono text-xs text-indigo-200 truncate pr-4">
+                        {app.webhookSecret ? (showWebhookSecret ? app.webhookSecret : '•'.repeat(32)) : 'Not configured'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                        className="p-1.5 text-slate-400 hover:text-white bg-[var(--bg-secondary)] hover:bg-[var(--bg-card)] rounded transition-colors"
+                        title={showWebhookSecret ? "Hide Secret" : "Reveal Secret"}
+                      >
+                        {showWebhookSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <button 
+                        onClick={() => app.webhookSecret && copyToClipboard(app.webhookSecret)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-400 bg-[var(--bg-secondary)] hover:bg-indigo-500/10 rounded transition-colors"
+                        title="Copy to Clipboard"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+  );
+};
 
 export const ProductsList = () => {
   const queryClient = useQueryClient();
@@ -47,7 +224,7 @@ export const ProductsList = () => {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto pb-10">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Connected Applications</h1>
@@ -62,7 +239,7 @@ export const ProductsList = () => {
       </div>
 
       {showAddForm && (
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-6 rounded-xl">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-6 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
           <h2 className="text-lg font-bold text-white mb-4">Register New Application</h2>
           <form 
             onSubmit={(e) => { e.preventDefault(); createMutation.mutate(formData); }}
@@ -121,44 +298,16 @@ export const ProductsList = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {isLoading ? (
-          <div className="col-span-full text-slate-400 py-10 text-center">Loading applications...</div>
+          <div className="text-slate-400 py-10 text-center animate-pulse">Loading applications...</div>
         ) : applications.length === 0 ? (
-          <div className="col-span-full text-slate-400 py-10 text-center">No applications registered. Click "Add Application" to connect one.</div>
+          <div className="text-slate-400 py-10 text-center border border-dashed border-[var(--border-color)] rounded-xl">
+            No applications registered. Click "Add Application" to connect one.
+          </div>
         ) : (
           applications.map((app: any) => (
-            <div key={app.id} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex items-start justify-between group hover:border-indigo-500/50 transition-colors">
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-[var(--bg-secondary)] rounded-lg flex items-center justify-center text-indigo-400 border border-[var(--border-color)]">
-                  <Package className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-white font-bold text-lg leading-tight">{app.displayName}</h3>
-                  <div className="text-slate-500 text-xs font-mono mb-2">{app.applicationName}</div>
-                  
-                  <div className="flex items-center gap-2 text-xs text-slate-400 bg-[var(--bg-secondary)] px-2 py-1 rounded w-fit border border-[var(--border-color)]">
-                    <Globe className="w-3 h-3 text-emerald-500" /> {app.apiBaseUrl}
-                  </div>
-                  {app.apiKey && (
-                    <div className="mt-2 flex items-center gap-2 text-xs text-indigo-300 bg-indigo-500/10 px-2 py-1.5 rounded w-fit border border-indigo-500/20 font-mono">
-                      <Key className="w-3 h-3" /> {app.apiKey}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <button 
-                onClick={() => {
-                  if (confirm(`Are you sure you want to delete ${app.displayName}?`)) {
-                    deleteMutation.mutate(app.id);
-                  }
-                }}
-                className="text-slate-500 hover:text-rose-500 p-2 rounded hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+            <ApplicationCard key={app.id} app={app} deleteMutation={deleteMutation} />
           ))
         )}
       </div>

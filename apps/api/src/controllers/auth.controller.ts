@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { jwtSecret } from '../config';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -50,11 +50,7 @@ export const login = async (req: Request, res: Response) => {
     lastName: user.lastName
   };
 
-  const token = jwt.sign(
-    payload,
-    process.env.JWT_SECRET || 'fallback_secret',
-    { expiresIn: '1d' }
-  );
+  const token = jwt.sign(payload, jwtSecret(), { expiresIn: '1h' });
 
   res.json({
     message: 'Login successful',

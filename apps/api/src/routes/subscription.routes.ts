@@ -1,14 +1,18 @@
 import { Router } from 'express';
-import { getSubscriptions, getCustomers, getSubscriptionAnalytics } from '../controllers/subscription.controller';
-import { authenticate } from '../middlewares/auth.middleware';
+import { getSubscriptions, getCustomers, getSubscriptionAnalytics, createSubscription, updateSubscription, cancelSubscription, renewSubscription, failPayment } from '../controllers/subscription.controller';
+import { authenticate, MANAGEMENT_ROLES, requireRoles } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// Temporarily disabling authenticate for mock data ease of testing, or keep it if headers are passed correctly
-// router.use(authenticate);
+router.use(authenticate);
 
 router.get('/', getSubscriptions);
 router.get('/customers', getCustomers);
 router.get('/analytics', getSubscriptionAnalytics);
+router.post('/', requireRoles(MANAGEMENT_ROLES), createSubscription);
+router.put('/:id', requireRoles(MANAGEMENT_ROLES), updateSubscription);
+router.post('/:id/cancel', requireRoles(MANAGEMENT_ROLES), cancelSubscription);
+router.post('/:id/renew', requireRoles(MANAGEMENT_ROLES), renewSubscription);
+router.post('/:id/fail-payment', requireRoles(MANAGEMENT_ROLES), failPayment);
 
 export default router;

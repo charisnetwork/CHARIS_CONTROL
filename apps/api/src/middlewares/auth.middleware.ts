@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from './error.middleware';
 import { AdminRole } from '@prisma/client';
+import { jwtSecret } from '../config';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -18,14 +19,8 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 
   const token = authHeader.split(' ')[1];
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    throw new AppError('Internal Server Error: JWT_SECRET is not configured', 500);
-  }
-
   try {
-    const decoded = jwt.verify(token, secret) as {
+    const decoded = jwt.verify(token, jwtSecret()) as {
       id: string;
       email: string;
       role: AdminRole;
@@ -33,9 +28,14 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     req.user = decoded;
     next();
   } catch (error) {
+    if (error instanceof Error && error.message === 'JWT_SECRET must be configured') {
+      throw new AppError('Authentication is not configured', 503);
+    }
     throw new AppError('Unauthorized: Invalid token', 401);
   }
 };
+
+export const MANAGEMENT_ROLES: AdminRole[] = [AdminRole.SUPER_ADMIN, AdminRole.ADMIN];
 
 export const requireRoles = (roles: AdminRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {

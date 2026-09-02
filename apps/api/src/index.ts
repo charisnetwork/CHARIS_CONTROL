@@ -12,17 +12,29 @@ import planRoutes from './routes/plan.routes';
 import couponRoutes from './routes/coupon.routes';
 import applicationRoutes from './routes/application.routes';
 import syncRoutes from './routes/sync.routes';
+import userRoutes from './routes/user.routes';
+import entitlementRoutes from './routes/entitlement.routes';
+import { WebhookService } from './services/webhook.service';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { allowedOrigins, isProduction, jwtSecret } from './config';
 import './queues/health.queue';
 
 dotenv.config();
+
+// Refuse a production process that would issue or accept unverifiable tokens.
+if (isProduction) jwtSecret();
+const origins = allowedOrigins();
+if (isProduction && origins.length === 0) throw new Error('CORS_ALLOWED_ORIGINS must be configured in production');
+const developmentOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+const corsOrigins = origins.length ? origins : developmentOrigins;
 
 const app = express();
 const httpServer = createServer(app);
 export const io = new Server(httpServer, {
   cors: {
-    origin: '*',
+    origin: corsOrigins,
+    credentials: true,
   }
 });
 
@@ -35,7 +47,7 @@ io.on('connection', (socket) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
+app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(helmet());
 app.use(morgan('dev'));
 
@@ -52,6 +64,8 @@ app.use('/api/plans', planRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/sync', syncRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/entitlements', entitlementRoutes);
 
 // Use error handler middleware
 app.use(errorHandler);
@@ -59,5 +73,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 4000;
 
 httpServer.listen(PORT, () => {
+  WebhookService.startDeliveryWorker();
   console.log(`Server is running on port ${PORT}`);
 });
