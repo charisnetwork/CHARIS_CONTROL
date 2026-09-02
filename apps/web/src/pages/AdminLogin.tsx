@@ -11,7 +11,7 @@ const isGateway = window.location.pathname.startsWith('/admin-portal');
 // Railway only exposes one port, admin routes are served from main backend
 const API_BASE_URL = isGateway 
   ? '/admin/api'  // Through gateway - use relative path
-  : ((import.meta.env.VITE_Control_api_Backend || 'http://localhost:8001').replace(/\/+$/, '')) + '/api/admin';
+  : ((import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')) + '/api/admin';
 
 console.log('[Admin Login] API_BASE_URL:', API_BASE_URL, '| Host:', host, '| isGateway:', isGateway);
 
