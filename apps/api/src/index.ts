@@ -30,18 +30,43 @@ dotenv.config();
 
 // Refuse a production process that would issue or accept unverifiable tokens.
 if (isProduction) jwtSecret();
-const origins = allowedOrigins();
-const developmentOrigins = ['http://localhost:5173', 'http://localhost:3000'];
-const corsOrigins = origins.length ? origins : developmentOrigins;
-// In production, an omitted allow-list must not turn into a wildcard. Starting
-// with browser CORS disabled keeps health checks/server-to-server traffic alive.
-const corsOriginOption = origins.length ? origins : isProduction ? false : corsOrigins;
+const configuredOrigins = allowedOrigins();
+const defaultAllowedOrigins = [
+  'https://charis-control.pages.dev',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4000'
+];
+
+const isOriginAllowed = (origin: string | undefined): boolean => {
+  if (!origin) return true; // Server-to-server, mobile, curl
+  if (configuredOrigins.length > 0) {
+    if (configuredOrigins.includes('*') || configuredOrigins.includes(origin)) return true;
+  }
+  if (defaultAllowedOrigins.includes(origin) || origin.endsWith('.pages.dev') || origin.endsWith('.up.railway.app')) {
+    return true;
+  }
+  return false;
+};
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-entitlement-token', 'x-webhook-signature'],
+};
 
 const app = express();
 const httpServer = createServer(app);
 export const io = new Server(httpServer, {
   cors: {
-    origin: corsOriginOption,
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
   }
 });
@@ -53,10 +78,10 @@ io.on('connection', (socket) => {
   });
 });
 
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors({ origin: corsOriginOption, credentials: true }));
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('dev'));
 
 // Health check route
