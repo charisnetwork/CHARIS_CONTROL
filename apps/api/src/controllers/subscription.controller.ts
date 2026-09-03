@@ -33,7 +33,7 @@ export const getCustomers = async (req: Request, res: Response) => {
     throw new AppError('Application not found or missing integration configuration', 404);
   }
 
-  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/api/admin/customers');
+  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/control/customers');
   res.json(data);
 };
 
@@ -62,7 +62,7 @@ export const getSubscriptionAnalytics = async (req: Request, res: Response) => {
     throw new AppError('Application not found or missing integration configuration', 404);
   }
 
-  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/api/admin/stats');
+  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/control/revenue-summary');
   res.json(data);
 };
 
@@ -82,15 +82,27 @@ export const createSubscription = async (req: Request, res: Response) => {
   const endsAt = new Date(startsAt); endsAt.setMonth(endsAt.getMonth() + quote.durationMonths);
   const featureSnapshot = plan.featureEntitlements.filter((entry: any) => entry.isEnabled).map((entry: any) => entry.feature.code);
   const limitSnapshot = Object.fromEntries(plan.featureEntitlements.filter((entry: any) => entry.isEnabled).map((entry: any) => [entry.feature.code, entry.limitValue || entry.feature.fields.find((field: any) => field.type === 'NUMBER')?.defaultValue || null]));
-  const sub = await prisma.subscriptionReference.create({
-    data: {
-      applicationId, customerId, customerName, customerEmail, planId, status, billingCycle, startDate: startsAt, endDate: endsAt,
-      durationMonths: quote.durationMonths, basePrice: quote.basePrice, discountAmount: quote.promotionDiscount,
-      couponCode: quote.couponCode, couponDiscount: quote.couponDiscount, promotionName: quote.promotionName,
-      finalPrice: quote.finalPrice, price: quote.finalPrice, featureSnapshot, limitSnapshot, usagePeriodUnit: 'MONTH', usagePeriodStart: startsAt,
-      usagePeriodEnd: new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, startsAt.getDate()),
-    } as any,
-    include: { plan: true }
+  const sub = await prisma.$transaction(async (tx) => {
+    if (quote.couponId) {
+      const coupon = await tx.coupon.findUnique({ where: { id: quote.couponId }, select: { maxUses: true } });
+      if (!coupon) throw new AppError('Coupon is no longer available', 409);
+      const consumed = await tx.coupon.updateMany({
+        where: { id: quote.couponId, ...(coupon.maxUses === null ? {} : { usesCount: { lt: coupon.maxUses } }) },
+        data: { usesCount: { increment: 1 } },
+      });
+      if (consumed.count !== 1) throw new AppError('Coupon is exhausted', 409);
+      await tx.couponUsage.create({ data: { couponId: quote.couponId, applicationId, customerId, discountApplied: quote.couponDiscount } });
+    }
+    return tx.subscriptionReference.create({
+      data: {
+        applicationId, customerId, customerName, customerEmail, planId, status, billingCycle, startDate: startsAt, endDate: endsAt,
+        durationMonths: quote.durationMonths, basePrice: quote.basePrice, discountAmount: quote.promotionDiscount,
+        couponCode: quote.couponCode, couponDiscount: quote.couponDiscount, promotionName: quote.promotionName,
+        finalPrice: quote.finalPrice, price: quote.finalPrice, featureSnapshot, limitSnapshot, usagePeriodUnit: 'MONTH', usagePeriodStart: startsAt,
+        usagePeriodEnd: new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, startsAt.getDate()),
+      } as any,
+      include: { plan: true }
+    });
   });
 
   await prisma.subscriptionEvent.create({

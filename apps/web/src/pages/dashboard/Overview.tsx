@@ -43,13 +43,14 @@ export function Overview() {
   const stats = apiStats ? {
     mrr: apiStats.mrr,
     arr: apiStats.arr,
-    users: apiStats.totalUsers,
+    tenants: apiStats.totalTenants,
+    activeSubscriptions: apiStats.activeSubscriptions,
     revenueGrowth: apiStats.revenueData.map((d: any) => d.revenue),
-    serverHealth: apiStats.health
+    planDistribution: apiStats.planDistribution || []
   } : {
-    mrr: 0, arr: 0, users: 0,
+    mrr: 0, arr: 0, tenants: 0, activeSubscriptions: 0,
     revenueGrowth: [0, 0, 0, 0, 0, 0],
-    serverHealth: { cpu: 0, ram: 0 }
+    planDistribution: []
   };
 
   const chartData = {
@@ -83,9 +84,9 @@ export function Overview() {
   return (
     <div className="space-y-6 text-white w-full">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard title="Monthly Recurring Revenue" value={`$${stats.mrr.toLocaleString()}`} icon={<DollarSign />} delay={0.1} />
-        <StatCard title="Annual Recurring Revenue" value={`$${stats.arr.toLocaleString()}`} icon={<Activity />} delay={0.2} />
-        <StatCard title="Total Users" value={stats.users.toLocaleString()} icon={<Users />} delay={0.3} />
+        <StatCard title="Monthly Recurring Revenue" value={`₹${stats.mrr.toLocaleString()}`} icon={<DollarSign />} delay={0.1} />
+        <StatCard title="Active subscriptions" value={stats.activeSubscriptions.toLocaleString()} icon={<Activity />} delay={0.2} />
+        <StatCard title="Tenants with subscriptions" value={stats.tenants.toLocaleString()} icon={<Users />} delay={0.3} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -107,33 +108,10 @@ export function Overview() {
           transition={{ delay: 0.5 }}
           className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl shadow-2xl space-y-6"
         >
-          <h3 className="text-lg font-medium text-gray-200">Server Health</h3>
-          
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm text-gray-400">
-              <span>CPU Usage</span>
-              <span>{stats.serverHealth.cpu}%</span>
-            </div>
-            <div className="w-full bg-black/40 rounded-full h-3 overflow-hidden border border-white/5">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-cyan-400 h-3 rounded-full transition-all duration-1000"
-                style={{ width: `${stats.serverHealth.cpu}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm text-gray-400">
-              <span>RAM Usage</span>
-              <span>{stats.serverHealth.ram}%</span>
-            </div>
-            <div className="w-full bg-black/40 rounded-full h-3 overflow-hidden border border-white/5">
-              <div 
-                className="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all duration-1000"
-                style={{ width: `${stats.serverHealth.ram}%` }}
-              />
-            </div>
-          </div>
+          <h3 className="text-lg font-medium text-gray-200">Plan distribution</h3>
+          {stats.planDistribution.length ? stats.planDistribution.map((plan: { name: string; count: number }) => (
+            <div key={plan.name} className="flex justify-between text-sm text-gray-300"><span>{plan.name}</span><span>{plan.count}</span></div>
+          )) : <p className="text-sm text-gray-500">No active subscriptions yet.</p>}
         </motion.div>
       </div>
     </div>

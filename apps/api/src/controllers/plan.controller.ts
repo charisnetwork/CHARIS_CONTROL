@@ -18,26 +18,52 @@ export const getPlans = async (req: Request, res: Response) => {
 };
 
 export const createPlan = async (req: Request, res: Response) => {
-  const { name, code, description, subscriptionModelId, order, pricingMatrix, isActive } = req.body;
-  if (!name || !code || !subscriptionModelId) {
-    throw new AppError('name, code, and subscriptionModelId are required', 400);
+  const { name, code, description, subscriptionModelId: suppliedModelId, applicationId, order, pricingMatrix, isActive, priceOptions = [] } = req.body;
+  if (!name || !code || (!suppliedModelId && !applicationId)) {
+    throw new AppError('name, code, and applicationId (or subscriptionModelId) are required', 400);
+  }
+  const mapping = suppliedModelId ? null : await prisma.applicationMapping.findFirst({ where: { applicationId, isActive: true } });
+  const subscriptionModelId = suppliedModelId || mapping?.subscriptionModelId;
+  if (!subscriptionModelId) throw new AppError('Application has no active subscription model mapping', 409);
+  if (!Array.isArray(priceOptions) || priceOptions.some((option: any) => !Number.isInteger(option.durationMonths) || option.durationMonths < 1 || !Number.isFinite(Number(option.baseAmount)) || Number(option.baseAmount) < 0)) {
+    throw new AppError('priceOptions must contain valid durationMonths and non-negative baseAmount values', 400);
   }
   const newPlan = await prisma.plan.create({
-    data: { name, code, description, subscriptionModelId, order, pricingMatrix, isActive }
+    data: {
+      name, code: String(code).trim().toLowerCase(), description, subscriptionModelId, order, pricingMatrix, isActive,
+      priceOptions: priceOptions.length ? { create: priceOptions.map((option: any) => ({
+        durationMonths: Number(option.durationMonths), currency: option.currency || 'INR', baseAmount: Number(option.baseAmount),
+        tiers: Array.isArray(option.tiers) && option.tiers.length ? { create: option.tiers.map((tier: any) => ({ periodNumber: Number(tier.periodNumber), monthlyAmount: Number(tier.monthlyAmount) })) } : undefined,
+      })) } : undefined,
+    } as any,
+    include: { priceOptions: { include: { tiers: true } }, featureEntitlements: { include: { feature: true } } },
   });
   res.status(201).json(newPlan);
 };
 
 export const updatePlan = async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  const { name, description, order, pricingMatrix, isActive } = req.body;
+  const { name, description, order, pricingMatrix, isActive, priceOptions } = req.body;
 
   const plan = await prisma.plan.findUnique({ where: { id } });
   if (!plan) throw new AppError('Plan not found', 404);
 
+  if (priceOptions !== undefined && (!Array.isArray(priceOptions) || priceOptions.some((option: any) => !Number.isInteger(option.durationMonths) || option.durationMonths < 1 || !Number.isFinite(Number(option.baseAmount)) || Number(option.baseAmount) < 0))) {
+    throw new AppError('priceOptions must contain valid durationMonths and non-negative baseAmount values', 400);
+  }
   const updatedPlan = await prisma.plan.update({
     where: { id },
-    data: { name, description, order, pricingMatrix, isActive }
+    data: {
+      name, description, order, pricingMatrix, isActive,
+      ...(priceOptions === undefined ? {} : { priceOptions: {
+        deleteMany: {},
+        create: priceOptions.map((option: any) => ({
+          durationMonths: Number(option.durationMonths), currency: option.currency || 'INR', baseAmount: Number(option.baseAmount),
+          tiers: Array.isArray(option.tiers) && option.tiers.length ? { create: option.tiers.map((tier: any) => ({ periodNumber: Number(tier.periodNumber), monthlyAmount: Number(tier.monthlyAmount) })) } : undefined,
+        })),
+      } }),
+    } as any,
+    include: { priceOptions: { include: { tiers: true } }, featureEntitlements: { include: { feature: true } } },
   });
 
   const subs = await prisma.subscriptionReference.findMany({

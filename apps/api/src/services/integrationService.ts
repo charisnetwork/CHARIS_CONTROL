@@ -16,6 +16,9 @@ export const externalAppRequest = async (
     const response = await axios.get(target, {
       headers: {
         'x-api-key': apiKey,
+        // Product adapters use this explicit header. It carries the registered
+        // application credential over TLS and is never returned to browsers.
+        'x-control-center-key': apiKey,
         'Content-Type': 'application/json'
       },
       timeout: 5000 // 5 second timeout to prevent hanging

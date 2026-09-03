@@ -5,7 +5,7 @@ import { authenticate, MANAGEMENT_ROLES, requireRoles } from '../middlewares/aut
 const router = Router();
 
 router.use(authenticate);
-router.post('/', createPlan);
+router.post('/', requireRoles(MANAGEMENT_ROLES), createPlan);
 router.get('/', getPlans);
 router.put('/:id', requireRoles(MANAGEMENT_ROLES), updatePlan);
 router.put('/features/:id', requireRoles(MANAGEMENT_ROLES), updateFeature);

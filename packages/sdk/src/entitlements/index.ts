@@ -53,15 +53,17 @@ export class EntitlementManager {
   }
   async fetchEntitlement(tenantId: string): Promise<EntitlementPayload> {
     if (!this.http) throw new Error('HTTP client not configured');
+    // The application credential is supplied by the integrator as an Axios
+    // default header. Do not put it in a URL or browser-visible configuration.
     const response = await this.http.get(`/api/entitlements/${encodeURIComponent(tenantId)}`);
     const payload = this.verifyToken(response.data.token);
     await this.cacheEntitlement(tenantId, payload);
     return payload;
   }
-  requireFeature(feature: string) { return this.authorize((e) => e.features.includes(feature), 'Feature not permitted'); }
+  requireFeature(feature: string) { return this.authorize((e) => e.features.includes(feature), 'Feature not permitted', { feature }); }
   requirePlan(plan: string) { return this.authorize((e) => e.planId === plan, 'Plan not permitted'); }
-  checkLimit(limit: string, amount: number) { return this.authorize((e) => e.limits[limit] === undefined || (Number.isFinite(e.limits[limit]) && amount <= e.limits[limit]), `Limit exceeded for ${limit}`); }
-  private authorize(check: (entitlement: EntitlementPayload) => boolean, message: string) {
+  checkLimit(limit: string, amount: number) { return this.authorize((e) => e.limits[limit] === -1 || (Number.isFinite(e.limits[limit]) && amount <= e.limits[limit]), `Limit exceeded for ${limit}`, { limit, amount }); }
+  private authorize(check: (entitlement: EntitlementPayload) => boolean, message: string, context?: { feature?: string; limit?: string; amount?: number }) {
     return async (req: any, res: any, next: any) => {
       try {
         // Never trust x-tenant-id: this is established by the app's own JWT middleware.
@@ -69,11 +71,16 @@ export class EntitlementManager {
         if (!tenantId) return res.status(401).json({ error: 'Authenticated tenant identity is required' });
         let entitlement = await this.getEntitlement(tenantId);
         if (!entitlement) {
-          const entitlementHeader = req.headers?.['x-entitlement-token'];
+          const authorization = req.headers?.authorization;
+          const entitlementHeader = req.headers?.['x-entitlement-token'] || (typeof authorization === 'string' && authorization.startsWith('Entitlement ') ? authorization.slice('Entitlement '.length) : undefined);
           entitlement = entitlementHeader ? this.verifyToken(entitlementHeader) : await this.fetchEntitlement(tenantId);
           await this.cacheEntitlement(tenantId, entitlement);
         }
-        if (entitlement.tenantId !== tenantId || !['ACTIVE', 'TRIAL'].includes(entitlement.status) || !check(entitlement)) return res.status(403).json({ error: message });
+        if (entitlement.tenantId !== tenantId || !['ACTIVE', 'TRIAL'].includes(entitlement.status) || !check(entitlement)) {
+          if (context?.limit) return res.status(403).json({ error: 'QUOTA_EXCEEDED', limit: context.limit, upgradeRequired: true, message });
+          if (context?.feature) return res.status(403).json({ error: 'FEATURE_NOT_AVAILABLE', feature: context.feature, upgradeRequired: true, message });
+          return res.status(403).json({ error: message, upgradeRequired: true });
+        }
         req.entitlement = entitlement; next();
       } catch (error: any) { return res.status(401).json({ error: error.message || 'Invalid entitlement' }); }
     };

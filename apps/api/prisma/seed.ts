@@ -4,8 +4,11 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = 'admin@charis.com';
-  const password = 'password123';
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL;
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error('Set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to run the seed.');
+  }
   const hashedPassword = await bcrypt.hash(password, 10);
 
   const admin = await prisma.adminUser.upsert({
@@ -14,13 +17,13 @@ async function main() {
     create: {
       email,
       password: hashedPassword,
-      firstName: 'Master',
-      lastName: 'Admin',
-      role: AdminRole.MASTER_ADMIN,
+      firstName: 'Platform',
+      lastName: 'Administrator',
+      role: AdminRole.SUPER_ADMIN,
     },
   });
 
-  console.log(`Master Admin created or already exists: ${admin.email}`);
+  console.log(`Bootstrap admin created or already exists: ${admin.email}`);
 }
 
 main()

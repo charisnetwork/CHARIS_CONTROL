@@ -21,13 +21,23 @@ export class EntitlementService {
   static async generateEntitlementToken(applicationId: string, tenantId: string): Promise<string> {
     const application = await prisma.application.findUnique({ where: { id: applicationId } });
     if (!application?.privateKey) throw new Error('Application signing key is not configured.');
+    const nowDate = new Date();
     const subscription: any = await prisma.subscriptionReference.findFirst({
-      where: { applicationId, customerId: tenantId },
-      include: { plan: { include: { subscriptionModel: { include: { features: { include: { fields: true } } } } } } },
-      orderBy: { updatedAt: 'desc' },
+      where: {
+        applicationId,
+        customerId: tenantId,
+        status: { in: ['ACTIVE', 'TRIAL'] },
+        OR: [{ endDate: null }, { endDate: { gt: nowDate } }],
+      },
+      include: { plan: { include: { featureEntitlements: { include: { feature: { include: { fields: true } } } } } } },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const isEntitled = subscription?.status === 'ACTIVE' || subscription?.status === 'TRIAL';
-    const features = isEntitled ? subscription?.plan?.subscriptionModel?.features ?? [] : [];
+    // Never fall back to every feature in a model: a plan grants only its
+    // explicit entitlements. Old subscriptions without a snapshot therefore
+    // remain deny-by-default until their plan is configured.
+    const featureEntries = isEntitled ? subscription?.plan?.featureEntitlements?.filter((entry: any) => entry.isEnabled) ?? [] : [];
+    const features = featureEntries.map((entry: any) => entry.feature);
     const limits: Record<string, number> = {};
     for (const feature of features) {
       const field = feature.fields.find((candidate: any) => candidate.type === 'NUMBER');

@@ -19,6 +19,7 @@ import marketingRoutes from './routes/marketing.routes';
 import notificationRoutes from './routes/notification.routes';
 import reportRoutes from './routes/report.routes';
 import customerRoutes from './routes/customer.routes';
+import publicCatalogRoutes from './routes/publicCatalog.routes';
 import { WebhookService } from './services/webhook.service';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -62,6 +63,10 @@ app.use(morgan('dev'));
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Browser-safe commercial catalog. It intentionally has no authentication
+// because its controller returns a strictly public projection only.
+app.use('/api/public', publicCatalogRoutes);
 
 // Routes
 app.use('/api/auth', authRoutes);
