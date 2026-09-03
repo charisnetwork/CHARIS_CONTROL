@@ -1,0 +1,10 @@
+[build]
+# Railway reads this repository-root file. The API is an npm workspace.
+buildCommand = "npm run build --workspace=api"
+
+[deploy]
+# Do not run Prisma schema synchronization during normal process startup.
+# Apply reviewed migrations separately with `npm run db:migrate:deploy --workspace=api`.
+startCommand = "npm run start --workspace=api"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
