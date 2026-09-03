@@ -30,15 +30,17 @@ dotenv.config();
 // Refuse a production process that would issue or accept unverifiable tokens.
 if (isProduction) jwtSecret();
 const origins = allowedOrigins();
-if (isProduction && origins.length === 0) throw new Error('CORS_ALLOWED_ORIGINS must be configured in production');
 const developmentOrigins = ['http://localhost:5173', 'http://localhost:3000'];
 const corsOrigins = origins.length ? origins : developmentOrigins;
+// In production, an omitted allow-list must not turn into a wildcard. Starting
+// with browser CORS disabled keeps health checks/server-to-server traffic alive.
+const corsOriginOption = origins.length ? origins : isProduction ? false : corsOrigins;
 
 const app = express();
 const httpServer = createServer(app);
 export const io = new Server(httpServer, {
   cors: {
-    origin: corsOrigins,
+    origin: corsOriginOption,
     credentials: true,
   }
 });
@@ -52,7 +54,7 @@ io.on('connection', (socket) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(cors({ origin: corsOriginOption, credentials: true }));
 app.use(helmet());
 app.use(morgan('dev'));
 

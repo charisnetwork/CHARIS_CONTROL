@@ -14,7 +14,9 @@ export function jwtSecret(): string {
 }
 
 export function allowedOrigins(): string[] {
-  return (process.env.CORS_ALLOWED_ORIGINS || '')
+  // FRONTEND_URL supports existing Railway deployments; CORS_ALLOWED_ORIGINS
+  // takes precedence and can contain a comma-separated allow-list.
+  return (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
