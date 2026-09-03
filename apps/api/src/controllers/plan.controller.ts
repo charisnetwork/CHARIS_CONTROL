@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { externalAppRequest } from '../services/integrationService';
 import { AppError } from '../middlewares/error.middleware';
 
 export const getPlans = async (req: Request, res: Response) => {
@@ -10,13 +9,12 @@ export const getPlans = async (req: Request, res: Response) => {
     return;
   }
   
-  const app = await prisma.application.findUnique({ where: { id: String(productId) } });
-  if (!app || !app.apiBaseUrl || !app.apiKey) {
-    throw new AppError('Application not found or missing integration configuration', 404);
-  }
-
-  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/api/admin/plans');
-  res.json(data);
+  const plans = await (prisma as any).plan.findMany({
+    where: { subscriptionModel: { mappings: { some: { applicationId: String(productId), isActive: true } } } },
+    include: { priceOptions: { include: { tiers: true }, orderBy: { durationMonths: 'asc' } }, promotions: { where: { isActive: true } }, featureEntitlements: { include: { feature: { include: { fields: true } } } } },
+    orderBy: { order: 'asc' },
+  });
+  res.json(plans);
 };
 
 export const createPlan = async (req: Request, res: Response) => {
@@ -111,4 +109,3 @@ export const updateFeatureLimit = async (req: Request, res: Response) => {
 
   res.json(updatedRule);
 };
-

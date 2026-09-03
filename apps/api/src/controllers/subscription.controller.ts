@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { quoteSubscription } from '../services/pricing.service';
 import { externalAppRequest } from '../services/integrationService';
 import { AppError } from '../middlewares/error.middleware';
 
@@ -10,15 +11,14 @@ export const getSubscriptions = async (req: Request, res: Response) => {
     return;
   }
   
-  const app = await prisma.application.findUnique({ where: { id: String(productId) } });
-  
-  if (!app || !app.apiBaseUrl || !app.apiKey) {
-    throw new AppError('Application not found or missing integration configuration', 404);
-  }
+  const subscriptions = await prisma.subscriptionReference.findMany({ where: { applicationId: String(productId) }, include: { plan: true }, orderBy: { createdAt: 'desc' } });
+  res.json(subscriptions);
+};
 
-  // Fetch live from the external app
-  const data = await externalAppRequest(app.apiBaseUrl, app.apiKey, '/api/admin/subscriptions');
-  res.json(data);
+export const previewSubscriptionQuote = async (req: Request, res: Response) => {
+  const { applicationId, planId, durationMonths, couponCode, promotionId } = req.body;
+  if (!applicationId || !planId || !durationMonths) throw new AppError('applicationId, planId, and durationMonths are required', 400);
+  res.json(await quoteSubscription(applicationId, planId, Number(durationMonths), couponCode, promotionId));
 };
 
 export const getCustomers = async (req: Request, res: Response) => {
@@ -67,7 +67,7 @@ export const getSubscriptionAnalytics = async (req: Request, res: Response) => {
 };
 
 export const createSubscription = async (req: Request, res: Response) => {
-  const { applicationId, customerId, planId, status, price, billingCycle, startDate } = req.body;
+  const { applicationId, customerId, customerName, customerEmail, planId, status = 'ACTIVE', billingCycle = 'MONTHLY', startDate, durationMonths, couponCode, promotionId } = req.body;
   if (!applicationId || !customerId || !planId) {
     throw new AppError('applicationId, customerId, and planId are required', 400);
   }
@@ -75,10 +75,21 @@ export const createSubscription = async (req: Request, res: Response) => {
   const application = await prisma.application.findUnique({ where: { id: applicationId } });
   if (!application) throw new AppError('Application not found', 404);
 
+  const quote = await quoteSubscription(applicationId, planId, Number(durationMonths), couponCode, promotionId);
+  const plan: any = await (prisma as any).plan.findUnique({ where: { id: planId }, include: { featureEntitlements: { include: { feature: { include: { fields: true } } } } } });
+  if (!plan) throw new AppError('Plan not found', 404);
+  const startsAt = startDate ? new Date(startDate) : new Date();
+  const endsAt = new Date(startsAt); endsAt.setMonth(endsAt.getMonth() + quote.durationMonths);
+  const featureSnapshot = plan.featureEntitlements.filter((entry: any) => entry.isEnabled).map((entry: any) => entry.feature.code);
+  const limitSnapshot = Object.fromEntries(plan.featureEntitlements.filter((entry: any) => entry.isEnabled).map((entry: any) => [entry.feature.code, entry.limitValue || entry.feature.fields.find((field: any) => field.type === 'NUMBER')?.defaultValue || null]));
   const sub = await prisma.subscriptionReference.create({
     data: {
-      applicationId, customerId, planId, status, price, billingCycle, startDate: new Date(startDate)
-    },
+      applicationId, customerId, customerName, customerEmail, planId, status, billingCycle, startDate: startsAt, endDate: endsAt,
+      durationMonths: quote.durationMonths, basePrice: quote.basePrice, discountAmount: quote.promotionDiscount,
+      couponCode: quote.couponCode, couponDiscount: quote.couponDiscount, promotionName: quote.promotionName,
+      finalPrice: quote.finalPrice, price: quote.finalPrice, featureSnapshot, limitSnapshot, usagePeriodUnit: 'MONTH', usagePeriodStart: startsAt,
+      usagePeriodEnd: new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, startsAt.getDate()),
+    } as any,
     include: { plan: true }
   });
 

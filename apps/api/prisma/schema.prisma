@@ -233,6 +233,7 @@ model Plan {
   subscriptionModelId String
   subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
   name                String // e.g., Free, Starter, Enterprise
+  code                String?           @unique // immutable commercial identifier, e.g. billeasy.pro
   description         String?
   order               Int               @default(0)
   pricingMatrix       Json              @default("{}") // Maps BillingModel ID to Price
@@ -241,6 +242,50 @@ model Plan {
   updatedAt           DateTime          @updatedAt
 
   subscriptionReferences SubscriptionReference[]
+  priceOptions          PlanPriceOption[]
+  promotions            PlanPromotion[]
+  featureEntitlements   PlanFeatureEntitlement[]
+}
+
+model PlanPriceOption {
+  id          String   @id @default(uuid())
+  planId      String
+  plan        Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  durationMonths Int
+  currency    String   @default("INR")
+  baseAmount  Decimal  @db.Decimal(12, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tiers       PlanPriceTier[]
+  @@unique([planId, durationMonths, currency])
+}
+
+model PlanPriceTier {
+  id                String          @id @default(uuid())
+  planPriceOptionId String
+  planPriceOption   PlanPriceOption @relation(fields: [planPriceOptionId], references: [id], onDelete: Cascade)
+  periodNumber      Int
+  monthlyAmount     Decimal         @db.Decimal(12, 2)
+  createdAt         DateTime        @default(now())
+
+  @@unique([planPriceOptionId, periodNumber])
+}
+
+model PlanPromotion {
+  id             String   @id @default(uuid())
+  planId         String
+  plan           Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name           String
+  discountType   String   // FIXED or PERCENTAGE
+  discountValue  Decimal  @db.Decimal(12, 2)
+  startsAt       DateTime
+  endsAt         DateTime
+  durationMonths Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Feature {
@@ -253,8 +298,23 @@ model Feature {
   category            String? // Group features visually
 
   fields    FeatureField[]
+  planEntitlements PlanFeatureEntitlement[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+}
+
+model PlanFeatureEntitlement {
+  id         String   @id @default(uuid())
+  planId     String
+  plan       Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  featureId  String
+  feature    Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  isEnabled  Boolean  @default(true)
+  limitValue String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([planId, featureId])
 }
 
 model FeatureField {
@@ -412,6 +472,19 @@ model SubscriptionReference {
   plan            Plan?       @relation(fields: [planId], references: [id])
   status          String // TRIAL, ACTIVE, PAST_DUE, PAUSED, CANCELLED, EXPIRED
   price           Float?
+  durationMonths  Int?
+  endDate         DateTime?
+  basePrice       Decimal? @db.Decimal(12, 2)
+  discountAmount  Decimal? @db.Decimal(12, 2)
+  couponCode      String?
+  couponDiscount  Decimal? @db.Decimal(12, 2)
+  promotionName   String?
+  finalPrice      Decimal? @db.Decimal(12, 2)
+  featureSnapshot Json? // immutable entitlement snapshot at assignment time
+  limitSnapshot   Json? // immutable limit snapshot at assignment time
+  usagePeriodUnit String? // MONTH, YEAR, etc.; independent of subscription duration
+  usagePeriodStart DateTime?
+  usagePeriodEnd  DateTime?
   billingCycle    String? // MONTHLY, YEARLY
   startDate       DateTime?
   nextRenewalDate DateTime?
@@ -420,6 +493,22 @@ model SubscriptionReference {
   updatedAt       DateTime    @updatedAt
 
   events SubscriptionEvent[]
+  usagePeriods SubscriptionUsagePeriod[]
+}
+
+model SubscriptionUsagePeriod {
+  id                      String                @id @default(uuid())
+  subscriptionReferenceId String
+  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id], onDelete: Cascade)
+  limitCode               String
+  periodStart             DateTime
+  periodEnd               DateTime
+  used                    Int                   @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  @@unique([subscriptionReferenceId, limitCode, periodStart])
+  @@index([subscriptionReferenceId, periodEnd])
 }
 
 model SubscriptionEvent {

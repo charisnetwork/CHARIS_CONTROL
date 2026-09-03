@@ -2,8 +2,8 @@ import * as crypto from 'node:crypto';
 
 export interface EntitlementPayload {
   entitlementVersion: 1; applicationId: string; tenantId: string; status: string;
-  planId: string | null; features: string[]; limits: Record<string, number>;
-  billingCycle: string | null; iat: number; exp: number; // Unix seconds
+  planId: string | null; subscriptionId: string | null; features: string[]; limits: Record<string, number>;
+  billingCycle: string | null; usagePeriod: { unit: string | null; startsAt: number | null; endsAt: number | null }; iat: number; exp: number; // Unix seconds
 }
 export interface CacheLayer {
   get(key: string): Promise<EntitlementPayload | null> | EntitlementPayload | null;

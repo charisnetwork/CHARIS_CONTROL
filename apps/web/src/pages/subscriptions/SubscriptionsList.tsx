@@ -30,10 +30,12 @@ export const SubscriptionsList = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [formData, setFormData] = useState({
+    customerId: '',
     customerName: '',
     customerEmail: '',
     planId: '',
-    billingCycle: 'monthly'
+    durationMonths: 12,
+    couponCode: ''
   });
 
   // Close dropdown on click outside
@@ -64,13 +66,21 @@ export const SubscriptionsList = () => {
 
   const createSubMutation = useMutation({
     mutationFn: async (newSub: any) => {
-      return axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions`, { ...newSub, productId: selectedProduct?.id });
+      return axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions`, { ...newSub, applicationId: selectedProduct?.id });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscriptions', selectedProduct?.id] });
       setIsModalOpen(false);
-      setFormData({ customerName: '', customerEmail: '', planId: '', billingCycle: 'monthly' });
+      setFormData({ customerId: '', customerName: '', customerEmail: '', planId: '', durationMonths: 12, couponCode: '' });
     }
+  });
+
+  const { data: quote } = useQuery({
+    queryKey: ['subscription-quote', selectedProduct?.id, formData.planId, formData.durationMonths, formData.couponCode],
+    queryFn: async () => (await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/subscriptions/quote`, {
+      applicationId: selectedProduct?.id, planId: formData.planId, durationMonths: formData.durationMonths, couponCode: formData.couponCode || undefined,
+    })).data,
+    enabled: isModalOpen && !!selectedProduct?.id && !!formData.planId,
   });
 
   const updateSubMutation = useMutation({
@@ -138,7 +148,7 @@ export const SubscriptionsList = () => {
             <Download className="w-4 h-4" /> Export
           </button>
           <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
-            <Plus className="w-4 h-4" /> Create Plan
+            <Plus className="w-4 h-4" /> Create Subscription
           </button>
         </div>
       </div>
@@ -261,6 +271,11 @@ export const SubscriptionsList = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Customer ID</label>
+                <input required type="text" value={formData.customerId} onChange={e => setFormData({...formData, customerId: e.target.value})} placeholder="Bill Easy company / tenant ID" className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+                <p className="text-xs text-slate-500">Assigns this reusable catalog plan to one downstream tenant.</p>
+              </div>
+              <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-300">Customer Name</label>
                 <input required type="text" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
               </div>
@@ -274,18 +289,23 @@ export const SubscriptionsList = () => {
                 <select required value={formData.planId} onChange={e => setFormData({...formData, planId: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none">
                   <option value="" disabled>Select a plan</option>
                   {plans.map((p: any) => (
-                    <option key={p.id} value={p.id}>{p.name} - ₹{p.monthlyPrice}/mo</option>
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-300">Billing Cycle</label>
-                <select required value={formData.billingCycle} onChange={e => setFormData({...formData, billingCycle: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
+                <label className="text-sm font-medium text-slate-300">Subscription Duration</label>
+                <select required value={formData.durationMonths} onChange={e => setFormData({...formData, durationMonths: Number(e.target.value)})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value={1}>1 month</option><option value={3}>3 months</option><option value={6}>6 months</option><option value={12}>1 year</option><option value={24}>2 years</option><option value={36}>3 years</option>
                 </select>
               </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-300">Coupon (optional)</label>
+                <input type="text" value={formData.couponCode} onChange={e => setFormData({...formData, couponCode: e.target.value})} className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-white focus:border-indigo-500 focus:outline-none" />
+              </div>
+              {quote && <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm space-y-1"><div className="font-semibold text-white">Subscription summary</div><div>Base price: ₹{Number(quote.basePrice).toLocaleString()}</div><div>Discounts: −₹{Number(quote.totalDiscount).toLocaleString()}</div><div className="font-bold text-indigo-300">Final price: ₹{Number(quote.finalPrice).toLocaleString()}</div></div>}
 
               <div className="flex justify-end gap-3 pt-6 mt-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">
