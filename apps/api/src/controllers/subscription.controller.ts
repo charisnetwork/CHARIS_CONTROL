@@ -84,10 +84,10 @@ export const createSubscription = async (req: Request, res: Response) => {
   const limitSnapshot = Object.fromEntries(plan.featureEntitlements.filter((entry: any) => entry.isEnabled).map((entry: any) => [entry.feature.code, entry.limitValue || entry.feature.fields.find((field: any) => field.type === 'NUMBER')?.defaultValue || null]));
   const sub = await prisma.$transaction(async (tx) => {
     if (quote.couponId) {
-      const coupon = await tx.coupon.findUnique({ where: { id: quote.couponId }, select: { maxUses: true } });
+      const coupon = await tx.coupon.findUnique({ where: { id: quote.couponId }, select: { totalUsageLimit: true } });
       if (!coupon) throw new AppError('Coupon is no longer available', 409);
       const consumed = await tx.coupon.updateMany({
-        where: { id: quote.couponId, ...(coupon.maxUses === null ? {} : { usesCount: { lt: coupon.maxUses } }) },
+        where: { id: quote.couponId, ...(coupon.totalUsageLimit === null ? {} : { usesCount: { lt: coupon.totalUsageLimit } }) },
         data: { usesCount: { increment: 1 } },
       });
       if (consumed.count !== 1) throw new AppError('Coupon is exhausted', 409);

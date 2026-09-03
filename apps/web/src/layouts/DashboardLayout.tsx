@@ -31,6 +31,7 @@ const NAVIGATION = [
   { name: 'Plans', to: '/plans', icon: Package },
   { name: 'Coupons', to: '/coupons', icon: Ticket },
   { name: 'Offers', to: '/offers', icon: Package }, // Or a gift icon
+  { name: 'Affiliates', to: '/affiliates', icon: Users },
   { name: 'Marketing', to: '/marketing', icon: Activity },
   { name: 'Notifications', to: '/notifications', icon: Bell },
   { name: 'Reports', to: '/reports', icon: BarChart3 },

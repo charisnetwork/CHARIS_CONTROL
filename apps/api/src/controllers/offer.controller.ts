@@ -10,13 +10,18 @@ export const getOffers = async (req: Request, res: Response) => {
 };
 
 export const createOffer = async (req: Request, res: Response) => {
-  const { title, banner, description, applicationId, startDate, endDate, status } = req.body;
-  const newOffer = await prisma.offer.create({
+  const { name, banner, description, applicationId, startDate, endDate, status } = req.body;
+  
+  if (!name || !startDate || !endDate) {
+    throw new AppError('Name, start date, and end date are required', 400);
+  }
+
+  const offer = await prisma.offer.create({
     data: {
-      title, banner, description, applicationId, startDate: new Date(startDate), endDate: new Date(endDate), status
+      name, banner, description, applicationId, startDate: new Date(startDate), endDate: new Date(endDate), status
     }
   });
-  res.status(201).json(newOffer);
+  res.status(201).json(offer);
 };
 
 export const deleteOffer = async (req: Request, res: Response) => {

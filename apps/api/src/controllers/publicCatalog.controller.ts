@@ -1,53 +1,99 @@
 import { Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
-import { AppError } from '../middlewares/error.middleware';
+import { PrismaClient } from '@prisma/client';
 
-/**
- * Deliberately small public projection of the commercial catalog.  This is the
- * only catalog endpoint intended for a product's browser UI: credentials,
- * internal mappings and subscription history never leave the control plane.
- */
+const prisma = new PrismaClient();
+
 export const getPublicCatalog = async (req: Request, res: Response) => {
-  const slug = String(req.params.applicationSlug || '').trim().toLowerCase();
-  if (!slug) throw new AppError('applicationSlug is required', 400);
+  try {
+    const applicationSlug = req.params.applicationSlug as string;
+    
+    // In a real app, applicationSlug might map to applicationName
+    const app = await prisma.application.findUnique({
+      where: { applicationName: applicationSlug },
+      include: {
+        mappings: {
+          include: {
+            subscriptionModel: {
+              include: {
+                plans: {
+                  where: { isActive: true },
+                  orderBy: { order: 'asc' },
+                  include: {
+                    priceOptions: {
+                      where: { isActive: true }
+                    },
+                    featureEntitlements: {
+                      include: { feature: true }
+                    }
+                  }
+                },
+                features: true
+              }
+            }
+          }
+        },
+        offers: {
+          where: { isActive: true, status: 'active', startDate: { lte: new Date() }, endDate: { gte: new Date() } },
+          select: {
+            id: true,
+            name: true,
+            productId: true,
+            planId: true,
+            durationMonths: true,
+            discountType: true,
+            discountValue: true,
+            perks: true,
+            banner: true,
+            description: true,
+            startDate: true,
+            endDate: true,
+            displayBadge: true
+          }
+        }
+      }
+    });
 
-  const application = await prisma.application.findFirst({
-    where: { applicationName: { equals: slug, mode: 'insensitive' }, status: 'ACTIVE' },
-    select: { id: true, applicationName: true, displayName: true, description: true },
-  });
-  if (!application) throw new AppError('Public catalog not found', 404);
+    if (!app) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
 
-  const plans: any[] = await (prisma as any).plan.findMany({
-    where: {
-      isActive: true,
-      subscriptionModel: { mappings: { some: { applicationId: application.id, isActive: true } } },
-    },
-    orderBy: { order: 'asc' },
-    include: {
-      priceOptions: { where: { isActive: true }, orderBy: { durationMonths: 'asc' }, include: { tiers: { orderBy: { periodNumber: 'asc' } } } },
-      promotions: { where: { isActive: true, startsAt: { lte: new Date() }, endsAt: { gte: new Date() } } },
-      featureEntitlements: { include: { feature: true } },
-    },
-  });
+    // Prepare safe catalog data (Zero secrets)
+    const catalog = {
+      applicationName: app.displayName || app.applicationName,
+      logo: app.logo,
+      description: app.description,
+      subscriptionModels: app.mappings.map((mapping: any) => {
+        const sm = mapping.subscriptionModel;
+        return {
+          id: sm.id,
+          name: sm.name,
+          description: sm.description,
+          plans: sm.plans.map((plan: any) => ({
+            id: plan.id,
+            name: plan.name,
+            code: plan.code,
+            badge: plan.badge,
+            isRecommended: plan.isRecommended,
+            description: plan.description,
+            perks: plan.perks,
+            pricingMatrix: plan.pricingMatrix,
+            durations: ['1m', '3m', '6m', '1y', '2y', '3y'], // Available duration options
+            features: plan.featureEntitlements.map((fe: any) => ({
+              code: fe.feature.code,
+              name: fe.feature.name,
+              isEnabled: fe.isEnabled,
+              limitValue: fe.limitValue,
+              category: fe.feature.category
+            }))
+          }))
+        };
+      }),
+      publicOffers: app.offers
+    };
 
-  res.setHeader('Cache-Control', 'public, max-age=300');
-  res.json({
-    product: { slug: application.applicationName, name: application.displayName, description: application.description },
-    plans: plans.map((plan) => ({
-      id: plan.id,
-      code: plan.code,
-      name: plan.name,
-      description: plan.description,
-      displayOrder: plan.order,
-      recommended: /pro|popular/i.test(`${plan.code || ''} ${plan.name}`),
-      prices: plan.priceOptions.map((option: any) => ({
-        durationMonths: option.durationMonths,
-        currency: option.currency,
-        amount: Number(option.baseAmount),
-        tiers: option.tiers.map((tier: any) => ({ periodNumber: tier.periodNumber, monthlyAmount: Number(tier.monthlyAmount) })),
-      })),
-      offers: plan.promotions.map((offer: any) => ({ name: offer.name, discountType: offer.discountType, discountValue: Number(offer.discountValue), durationMonths: offer.durationMonths })),
-      features: plan.featureEntitlements.map((entry: any) => ({ code: entry.feature.code, name: entry.feature.name, enabled: entry.isEnabled, limit: entry.limitValue })),
-    })),
-  });
+    return res.json(catalog);
+  } catch (error) {
+    console.error('Error fetching public catalog:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 };

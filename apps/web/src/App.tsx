@@ -19,6 +19,7 @@ import { OffersList } from './pages/offers/OffersList';
 import { MarketingList } from './pages/marketing/MarketingList';
 import { NotificationsList } from './pages/notifications/NotificationsList';
 import { ReportsList } from './pages/reports/ReportsList';
+import { AffiliatesList } from './pages/affiliates/AffiliatesList';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = useAuthStore((state) => state.token);
@@ -89,6 +90,10 @@ const router = createBrowserRouter([
       {
         path: "reports",
         element: <ReportsList />
+      },
+      {
+        path: "affiliates",
+        element: <AffiliatesList />
       }
     ],
   },

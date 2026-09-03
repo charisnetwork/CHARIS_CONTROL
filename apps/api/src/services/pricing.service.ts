@@ -39,7 +39,7 @@ export async function quoteSubscription(applicationId: string, planId: string, d
   if (couponCode) {
     const normalizedCode = couponCode.trim().toUpperCase();
     const coupon = await prisma.coupon.findFirst({ where: { code: normalizedCode, isActive: true, OR: [{ applicationId }, { applicationId: null }] } });
-    if (!coupon || coupon.expiresAt && coupon.expiresAt < new Date() || coupon.maxUses !== null && coupon.usesCount >= coupon.maxUses) throw new AppError('Coupon is invalid or exhausted', 400);
+    if (!coupon || coupon.expiresAt && coupon.expiresAt < new Date() || coupon.totalUsageLimit !== null && coupon.usesCount >= coupon.totalUsageLimit) throw new AppError('Coupon is invalid or exhausted', 400);
     const applicablePlans = Array.isArray(coupon.applicablePlans) ? coupon.applicablePlans.map(String) : [];
     if (applicablePlans.length && !applicablePlans.includes(planId) && !applicablePlans.includes(plan.code || '')) throw new AppError('Coupon is not applicable to this plan', 400);
     appliedCoupon = coupon.code;

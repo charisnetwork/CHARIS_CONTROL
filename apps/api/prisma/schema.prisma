@@ -97,18 +97,52 @@ model AdminUser {
 }
 
 model Affiliate {
-  id            String   @id @default(uuid())
-  companyName   String
-  contactPerson String
-  email         String
-  mobileNo      String
-  status        String   @default("active") // active, inactive
-  commissionPct Float    @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  companyName     String
+  contactPerson   String
+  email           String
+  mobileNo        String
+  address         String?
+  pan             String?
+  gstin           String?
+  affiliateCode   String?
+  couponCode      String?
+  commissionType  String   @default("percentage") // percentage, fixed
+  commissionBasis String   @default("net") // net, gross
+  commissionValue Float    @default(0)
+  status          String   @default("ACTIVE") // ACTIVE, PAUSED, EXPIRED, TERMINATED
+  payoutMethod    String?
+  payoutDetails   Json?
+  commissionPct   Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  coupons Coupon[]
+  coupons         Coupon[]
+  sales           AffiliateSale[]
+  subscriptionReferences SubscriptionReference[]
 }
+
+model AffiliateSale {
+  id                      String   @id @default(uuid())
+  subscriptionReferenceId String
+  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id])
+  affiliateId             String
+  affiliate               Affiliate @relation(fields: [affiliateId], references: [id])
+  couponId                String?
+  coupon                  Coupon? @relation(fields: [couponId], references: [id])
+  couponCodeSnapshot      String?
+  grossAmount             Decimal  @db.Decimal(12, 2)
+  discountAmount          Decimal  @db.Decimal(12, 2)
+  netAmount               Decimal  @db.Decimal(12, 2)
+  commissionRateSnapshot  Json?
+  commissionAmount        Decimal  @db.Decimal(12, 2)
+  saleDate                DateTime @default(now())
+  paymentStatus           String   @default("PAID")
+  payoutStatus            String   @default("PENDING") // PENDING, APPROVED, PAID
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
 
 model PlatformExpense {
   id          String   @id @default(uuid())
@@ -234,9 +268,12 @@ model Plan {
   subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
   name                String // e.g., Free, Starter, Enterprise
   code                String?           @unique // immutable commercial identifier, e.g. billeasy.pro
+  badge               String?
+  isRecommended       Boolean           @default(false)
   description         String?
   order               Int               @default(0)
-  pricingMatrix       Json              @default("{}") // Maps BillingModel ID to Price
+  perks               Json              @default("[]")
+  pricingMatrix       Json              @default("{}") // Maps duration codes '1m','3m','6m','1y','2y','3y' to prices
   isActive            Boolean           @default(true)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
@@ -245,6 +282,7 @@ model Plan {
   priceOptions          PlanPriceOption[]
   promotions            PlanPromotion[]
   featureEntitlements   PlanFeatureEntitlement[]
+  offers                Offer[]
 }
 
 model PlanPriceOption {
@@ -412,23 +450,38 @@ model Coupon {
   application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   affiliateId   String?
   affiliate     Affiliate?   @relation(fields: [affiliateId], references: [id])
+  campaignId    String?
+  campaign      MarketingCampaign? @relation(fields: [campaignId], references: [id])
 
-  discountType    String    @default("percentage") // percentage, flat
-  discountValue   Float     @default(0)
-  maxUses         Int?
-  usesCount       Int       @default(0)
-  expiresAt       DateTime?
-  applicablePlans Json      @default("[]") // Array of plan IDs (or Plan Codes)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  discountType      String    @default("percentage") // percentage, fixed
+  discountValue     Float     @default(0)
+  totalUsageLimit   Int?
+  usesCount         Int       @default(0)
+  perCustomerLimit  Int?
+  isFirstTimeOnly   Boolean   @default(false)
+  expiresAt         DateTime?
+  minDurationMonths Int?
+  applicableProducts Json     @default("[]")
+  applicablePlans   Json      @default("[]") // Array of plan IDs (or Plan Codes)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  usages CouponUsage[]
+  usages        CouponUsage[]
+  sales         AffiliateSale[]
 }
+
 
 model Offer {
   id            String       @id @default(uuid())
-  title         String // e.g. "Festival Offer"
+  name          String // e.g. "Festival Offer"
+  productId     String?
+  planId        String?
+  plan          Plan?        @relation(fields: [planId], references: [id])
+  durationMonths Int?
+  discountType  String       @default("percentage")
+  discountValue Float        @default(0)
+  perks         Json         @default("[]")
   banner        String?
   description   String?
   applicationId String?
@@ -436,6 +489,8 @@ model Offer {
   startDate     DateTime
   endDate       DateTime
   status        String       @default("active") // active, inactive
+  isActive      Boolean      @default(true)
+  displayBadge  String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -455,6 +510,7 @@ model MarketingCampaign {
   status      String   @default("active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  coupons     Coupon[]
 }
 
 // ------------------------------------------------------
@@ -475,13 +531,20 @@ model SubscriptionReference {
   durationMonths  Int?
   endDate         DateTime?
   basePrice       Decimal? @db.Decimal(12, 2)
+  grossAmount     Decimal? @db.Decimal(12, 2)
   discountAmount  Decimal? @db.Decimal(12, 2)
+  netAmount       Decimal? @db.Decimal(12, 2)
   couponCode      String?
+  couponCodeSnapshot String?
   couponDiscount  Decimal? @db.Decimal(12, 2)
   promotionName   String?
   finalPrice      Decimal? @db.Decimal(12, 2)
+  affiliateId     String?
+  affiliate       Affiliate? @relation(fields: [affiliateId], references: [id])
   featureSnapshot Json? // immutable entitlement snapshot at assignment time
   limitSnapshot   Json? // immutable limit snapshot at assignment time
+  perks           Json?
+  priceSnapshot   Json?
   usagePeriodUnit String? // MONTH, YEAR, etc.; independent of subscription duration
   usagePeriodStart DateTime?
   usagePeriodEnd  DateTime?
@@ -492,8 +555,9 @@ model SubscriptionReference {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  events SubscriptionEvent[]
-  usagePeriods SubscriptionUsagePeriod[]
+  events          SubscriptionEvent[]
+  usagePeriods    SubscriptionUsagePeriod[]
+  affiliateSales  AffiliateSale[]
 }
 
 model SubscriptionUsagePeriod {

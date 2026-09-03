@@ -20,6 +20,7 @@ import notificationRoutes from './routes/notification.routes';
 import reportRoutes from './routes/report.routes';
 import customerRoutes from './routes/customer.routes';
 import publicCatalogRoutes from './routes/publicCatalog.routes';
+import affiliateRoutes from './routes/affiliate.routes';
 import { WebhookService } from './services/webhook.service';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -108,6 +109,7 @@ app.use('/api/marketing', marketingRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/affiliates', affiliateRoutes);
 
 // Use error handler middleware
 app.use(errorHandler);
