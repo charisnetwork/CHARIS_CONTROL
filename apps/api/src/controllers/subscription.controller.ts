@@ -6,12 +6,13 @@ import { AppError } from '../middlewares/error.middleware';
 
 export const getSubscriptions = async (req: Request, res: Response) => {
   const { productId } = req.query;
-  if (!productId || productId === 'all') {
-    res.status(400).json({ message: 'A specific productId is required' });
-    return;
-  }
+  const whereClause = (productId && productId !== 'all') ? { applicationId: String(productId) } : {};
   
-  const subscriptions = await prisma.subscriptionReference.findMany({ where: { applicationId: String(productId) }, include: { plan: true }, orderBy: { createdAt: 'desc' } });
+  const subscriptions = await prisma.subscriptionReference.findMany({ 
+    where: whereClause, 
+    include: { plan: true, application: true }, 
+    orderBy: { createdAt: 'desc' } 
+  });
   res.json(subscriptions);
 };
 

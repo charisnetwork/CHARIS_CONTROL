@@ -92,11 +92,13 @@ export const SubscriptionsList = () => {
     }
   };
 
-  const filteredSubs = subscriptions.filter(sub => {
-    const matchesSearch = sub.customer?.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          sub.customer?.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredSubs = subscriptions.filter((sub: any) => {
+    const custName = sub.customer?.name || sub.customerName || sub.customerId || '';
+    const custEmail = sub.customer?.email || sub.customerEmail || '';
+    const matchesSearch = custName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          custEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           sub.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || sub.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || sub.status?.toLowerCase() === statusFilter.toLowerCase();
     return matchesSearch && matchesStatus;
   });
 
@@ -189,28 +191,30 @@ export const SubscriptionsList = () => {
                   </td>
                 </tr>
               ) : (
-                filteredSubs.map((sub) => (
+                filteredSubs.map((sub: any) => {
+                  const custName = sub.customer?.name || sub.customerName || sub.customerId || 'Customer';
+                  const custEmail = sub.customer?.email || sub.customerEmail || '';
+                  const appName = sub.application?.displayName || sub.application?.name || sub.plan?.application?.name || 'Bill Easy';
+                  return (
                   <tr key={sub.id} className="hover:bg-[var(--bg-secondary)]/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded bg-primary/20 text-primary flex items-center justify-center font-bold">
-                          {sub.customer?.name.charAt(0) || 'C'}
+                          {custName.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-semibold text-white">{sub.customer?.name || 'Unknown'}</div>
-                          <div className="text-xs text-[var(--text-muted)]">{sub.customer?.email}</div>
-                          {sub.tenantId && (
-                            <div className="flex items-center gap-1 text-[10px] text-purple-400 mt-0.5">
-                              <Building className="w-3 h-3" /> {sub.tenantId}
-                            </div>
-                          )}
+                          <div className="font-semibold text-white">{custName}</div>
+                          {custEmail && <div className="text-xs text-[var(--text-muted)]">{custEmail}</div>}
+                          <div className="flex items-center gap-1 text-[10px] text-purple-400 mt-0.5">
+                            <Building className="w-3 h-3" /> {sub.customerId || sub.tenantId || 'Tenant'}
+                          </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-white">{sub.plan?.name || 'Custom Plan'}</div>
                       <div className="text-xs text-[var(--text-muted)] flex items-center gap-1 mt-0.5">
-                        <Package className="w-3 h-3" /> {sub.plan?.application?.name || 'All'}
+                        <Package className="w-3 h-3" /> {appName}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -249,7 +253,8 @@ export const SubscriptionsList = () => {
                       </div>
                     </td>
                   </tr>
-                ))
+                );
+              })
               )}
             </tbody>
           </table>

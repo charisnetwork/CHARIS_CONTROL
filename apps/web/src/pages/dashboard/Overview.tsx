@@ -27,11 +27,16 @@ ChartJS.register(
   Filler
 );
 
+import { useProductStore } from '../../store/productStore';
+
 export function Overview() {
+  const { selectedProduct, isAllApplications } = useProductStore();
   const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboardStats'],
+    queryKey: ['dashboardStats', selectedProduct?.id, isAllApplications],
     queryFn: async () => {
-      const response = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/dashboard/stats`);
+      const apiBase = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
+      const params = (!isAllApplications && selectedProduct?.id) ? { applicationId: selectedProduct.id } : {};
+      const response = await axios.get(`${apiBase}/api/dashboard/stats`, { params });
       return response.data;
     }
   });
