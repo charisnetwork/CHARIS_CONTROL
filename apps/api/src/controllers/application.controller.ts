@@ -14,21 +14,41 @@ export const getApplications = async (req: Request, res: Response) => {
   res.json(applications.map(applicationMetadata));
 };
 
+export const getApplicationCredentials = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const application = await prisma.application.findUnique({
+    where: { id: String(id) }
+  });
+
+  if (!application) {
+    throw new AppError('Application not found', 404);
+  }
+
+  res.json({
+    id: application.id,
+    applicationName: application.applicationName,
+    displayName: application.displayName,
+    apiKey: application.apiKey,
+    publicKey: application.publicKey,
+    webhookUrl: application.webhookUrl,
+    webhookSecret: application.webhookSecret,
+    hasPrivateKey: Boolean(application.privateKey)
+  });
+};
+
 export const createApplication = async (req: Request, res: Response) => {
   const { 
     applicationName, 
     displayName, 
     apiBaseUrl, 
     description,
+    webhookUrl,
     environment = ApplicationEnvironment.PRODUCTION 
   } = req.body;
 
   if (!applicationName || !displayName || !apiBaseUrl) {
     throw new AppError('applicationName, displayName, and apiBaseUrl are required', 400);
   }
-
-  // Auto-generate a secure 64-character API key for this application
-  const generatedApiKey = `cc_live_${crypto.randomBytes(24).toString('hex')}`;
 
   const existing = await prisma.application.findUnique({
     where: { applicationName }
@@ -39,13 +59,36 @@ export const createApplication = async (req: Request, res: Response) => {
   }
 
   await assertSafePublicUrl(apiBaseUrl, 'apiBaseUrl');
+  if (webhookUrl) {
+    await assertSafePublicUrl(webhookUrl, 'webhookUrl');
+  }
+
+  // Auto-generate secure API key, Webhook Secret, and 2048-bit RSA keypair
+  const generatedApiKey = `cc_live_${crypto.randomBytes(24).toString('hex')}`;
+  const webhookSecret = crypto.randomBytes(32).toString('hex');
+  
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: {
+      type: 'spki',
+      format: 'pem'
+    },
+    privateKeyEncoding: {
+      type: 'pkcs8',
+      format: 'pem'
+    }
+  });
 
   const application = await prisma.application.create({
     data: {
       applicationName,
       displayName,
       apiBaseUrl,
+      webhookUrl: webhookUrl || null,
       apiKey: generatedApiKey,
+      webhookSecret,
+      publicKey,
+      privateKey,
       description,
       environment,
       status: ApplicationStatus.ACTIVE
@@ -53,6 +96,92 @@ export const createApplication = async (req: Request, res: Response) => {
   });
 
   res.status(201).json(applicationMetadata(application));
+};
+
+export const updateApplicationCredentials = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { webhookUrl } = req.body;
+
+  const app = await prisma.application.findUnique({ where: { id: String(id) } });
+  if (!app) {
+    throw new AppError('Application not found', 404);
+  }
+
+  if (webhookUrl) {
+    await assertSafePublicUrl(webhookUrl, 'webhookUrl');
+  }
+
+  // If any credentials missing, auto-generate them
+  let { apiKey, publicKey, privateKey, webhookSecret } = app;
+  if (!apiKey) {
+    apiKey = `cc_live_${crypto.randomBytes(24).toString('hex')}`;
+  }
+  if (!webhookSecret) {
+    webhookSecret = crypto.randomBytes(32).toString('hex');
+  }
+  if (!publicKey || !privateKey) {
+    const keys = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    });
+    publicKey = keys.publicKey;
+    privateKey = keys.privateKey;
+  }
+
+  const updated = await prisma.application.update({
+    where: { id: String(id) },
+    data: {
+      webhookUrl: webhookUrl !== undefined ? (webhookUrl || null) : app.webhookUrl,
+      apiKey,
+      publicKey,
+      privateKey,
+      webhookSecret
+    }
+  });
+
+  res.json({
+    id: updated.id,
+    applicationName: updated.applicationName,
+    displayName: updated.displayName,
+    apiKey: updated.apiKey,
+    publicKey: updated.publicKey,
+    webhookUrl: updated.webhookUrl,
+    webhookSecret: updated.webhookSecret,
+    message: 'Credentials updated successfully'
+  });
+};
+
+export const generateAllCredentials = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const app = await prisma.application.findUnique({ where: { id: String(id) } });
+  if (!app) {
+    throw new AppError('Application not found', 404);
+  }
+
+  const apiKey = `cc_live_${crypto.randomBytes(24).toString('hex')}`;
+  const webhookSecret = crypto.randomBytes(32).toString('hex');
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  });
+
+  const updated = await prisma.application.update({
+    where: { id: String(id) },
+    data: { apiKey, webhookSecret, publicKey, privateKey }
+  });
+
+  res.json({
+    id: updated.id,
+    applicationName: updated.applicationName,
+    displayName: updated.displayName,
+    apiKey: updated.apiKey,
+    publicKey: updated.publicKey,
+    webhookUrl: updated.webhookUrl,
+    webhookSecret: updated.webhookSecret,
+    message: 'All API keys & webhook credentials regenerated successfully'
+  });
 };
 
 export const deleteApplication = async (req: Request, res: Response) => {
@@ -95,5 +224,5 @@ export const regenerateWebhookSecret = async (req: Request, res: Response) => {
     data: { webhookSecret }
   });
 
-  res.json({ message: 'Webhook secret regenerated' });
+  res.json({ message: 'Webhook secret regenerated', webhookSecret: updated.webhookSecret });
 };

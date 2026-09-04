@@ -101,8 +101,8 @@ export const SubscriptionsList = () => {
   });
 
   // Builder Helper Functions
-  const selectedPlanDetails = mockPlans.find(p => p.id === builderState.tierId);
-  const selectedPrice = selectedPlanDetails?.priceOptions.find(p => p.durationMonths === builderState.duration);
+  const selectedPlanDetails = mockPlans.find(p => p.id === builderState.tierId) || mockPlans[1];
+  const selectedPrice = selectedPlanDetails?.priceOptions?.find(p => p.durationMonths === builderState.duration) || selectedPlanDetails?.priceOptions?.[0];
   const basePrice = selectedPrice?.baseAmount || 0;
   const couponDiscount = builderState.couponCode === 'PROMO20' ? 0.2 : 0;
   const finalPrice = basePrice * (1 - couponDiscount);
@@ -280,13 +280,13 @@ export const SubscriptionsList = () => {
                     {STEPS.map(step => (
                       <li key={step.id}>
                         <button 
-                          onClick={() => step.id < currentStep && setCurrentStep(step.id)}
+                          onClick={() => setCurrentStep(step.id)}
                           className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold transition-all ${
                             currentStep === step.id 
                               ? 'bg-primary text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' 
                               : currentStep > step.id 
                                 ? 'text-emerald-400 hover:bg-[var(--bg-hover)]' 
-                                : 'text-[var(--text-muted)] opacity-50 cursor-not-allowed'
+                                : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-white'
                           }`}
                         >
                           <step.icon className="w-5 h-5" /> {step.title}
