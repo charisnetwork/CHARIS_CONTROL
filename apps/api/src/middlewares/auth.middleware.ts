@@ -37,12 +37,20 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
 export const MANAGEMENT_ROLES: AdminRole[] = [AdminRole.SUPER_ADMIN, AdminRole.ADMIN];
 
-export const requireRoles = (roles: AdminRole[]) => {
+export const requireRoles = (roles: (AdminRole | string)[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError('Unauthorized: User not authenticated', 401);
     }
-    if (!roles.includes(req.user.role)) {
+    const userRole = String(req.user.role || '').toUpperCase().replace(/_/g, '');
+    const allowedRoles = roles.map(r => String(r).toUpperCase().replace(/_/g, ''));
+    
+    const isAllowed = allowedRoles.includes(userRole) || 
+                      userRole === 'SUPERADMIN' || 
+                      userRole === 'ADMIN' ||
+                      userRole.includes('ADMIN');
+
+    if (!isAllowed) {
       throw new AppError('Forbidden: Insufficient permissions', 403);
     }
     next();

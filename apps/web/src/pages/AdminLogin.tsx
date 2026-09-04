@@ -65,6 +65,8 @@ const Login = ({ onLogin }) => {
       if (response.data.success && response.data.token) {
         const { token, user } = response.data;
         localStorage.setItem('admin_token', token);
+        localStorage.setItem('cc_token', token);
+        useAuthStore.getState().setAuth(token, user);
         onLogin(token, user);
       }
     } catch (err) {
