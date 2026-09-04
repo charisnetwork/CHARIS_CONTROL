@@ -24,7 +24,7 @@ export default function Login() {
     setError('');
 
     try {
-      const { data } = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/auth/login`, { email, password });
+      const { data } = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/auth/login`, { email, password });
       setAuth(data.token, data.user);
       navigate('/', { replace: true });
     } catch (err: any) {

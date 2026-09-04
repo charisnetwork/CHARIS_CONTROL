@@ -112,7 +112,7 @@ function App() {
 
   useEffect(() => {
     // Initial fetch of applications to populate the context switcher
-    axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications`)
+    axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`)
       .then(res => setProducts(res.data))
       .catch(err => console.error('Failed to fetch applications', err));
   }, [setProducts]);

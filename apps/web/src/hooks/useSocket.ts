@@ -5,7 +5,7 @@ export function useSocket() {
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    const socketInstance = io((import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, ''));
+    const socketInstance = io((import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, ''));
     setSocket(socketInstance);
 
     return () => {

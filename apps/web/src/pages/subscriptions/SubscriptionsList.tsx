@@ -10,7 +10,7 @@ import { useProductStore } from '../../store/productStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 
-const API_BASE = (import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
 
 // Types
 type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'unpaid' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'paused';

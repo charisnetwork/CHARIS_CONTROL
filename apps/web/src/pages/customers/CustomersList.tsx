@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Users } from 'lucide-react';
 import { useProductStore } from '../../store/productStore';
 
-const apiBase = (import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '');
+const apiBase = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
 
 /** Customers are downstream tenants. We deliberately do not manufacture rows
  * when the selected product has not supplied a secured control adapter. */

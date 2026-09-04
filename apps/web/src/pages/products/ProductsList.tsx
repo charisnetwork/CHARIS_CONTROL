@@ -49,7 +49,7 @@ const ApplicationCard = ({ app, deleteMutation }: { app: any, deleteMutation: an
   const queryClient = useQueryClient();
 
   const getApiUrl = (path: string) => {
-    const base = (import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '');
+    const base = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
     return `${base}${path}`;
   };
 
@@ -393,7 +393,7 @@ export const ProductsList = () => {
   const { data: applications = [], isLoading } = useQuery({
     queryKey: ['applications'],
     queryFn: async () => {
-      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications`);
+      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`);
       setProducts(res.data);
       return res.data;
     }
@@ -401,7 +401,7 @@ export const ProductsList = () => {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications`, data);
+      const res = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`, data);
       return res.data;
     },
     onSuccess: () => {
@@ -413,7 +413,7 @@ export const ProductsList = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await axios.delete(`${(import.meta.env.VITE_Control_api_Backend || 'http://localhost:4000').replace(/\/+$/, '')}/api/applications/${id}`);
+      await axios.delete(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });
