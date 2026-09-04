@@ -20,7 +20,7 @@ router.put('/:id/credentials', requireRoles(MANAGEMENT_ROLES), updateApplication
 router.post('/:id/generate-all', requireRoles(MANAGEMENT_ROLES), generateAllCredentials);
 router.post('/', requireRoles(MANAGEMENT_ROLES), createApplication);
 router.delete('/:id', requireRoles(MANAGEMENT_ROLES), deleteApplication);
-router.post('/:id/keys', requireRoles(['SUPER_ADMIN']), regenerateKeys);
-router.post('/:id/webhook-secret', requireRoles(['SUPER_ADMIN']), regenerateWebhookSecret);
+router.post('/:id/keys', requireRoles(MANAGEMENT_ROLES), regenerateKeys);
+router.post('/:id/webhook-secret', requireRoles(MANAGEMENT_ROLES), regenerateWebhookSecret);
 
 export default router;

@@ -24,15 +24,45 @@ export const getApplicationCredentials = async (req: Request, res: Response) => 
     throw new AppError('Application not found', 404);
   }
 
+  let { apiKey, publicKey, privateKey, webhookSecret } = application;
+  let needsUpdate = false;
+
+  if (!apiKey) {
+    apiKey = `cc_live_${crypto.randomBytes(24).toString('hex')}`;
+    needsUpdate = true;
+  }
+  if (!webhookSecret) {
+    webhookSecret = crypto.randomBytes(32).toString('hex');
+    needsUpdate = true;
+  }
+  if (!publicKey || !privateKey) {
+    const keys = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    });
+    publicKey = keys.publicKey;
+    privateKey = keys.privateKey;
+    needsUpdate = true;
+  }
+
+  let updatedApp = application;
+  if (needsUpdate) {
+    updatedApp = await prisma.application.update({
+      where: { id: String(id) },
+      data: { apiKey, publicKey, privateKey, webhookSecret }
+    });
+  }
+
   res.json({
-    id: application.id,
-    applicationName: application.applicationName,
-    displayName: application.displayName,
-    apiKey: application.apiKey,
-    publicKey: application.publicKey,
-    webhookUrl: application.webhookUrl,
-    webhookSecret: application.webhookSecret,
-    hasPrivateKey: Boolean(application.privateKey)
+    id: updatedApp.id,
+    applicationName: updatedApp.applicationName,
+    displayName: updatedApp.displayName,
+    apiKey: updatedApp.apiKey,
+    publicKey: updatedApp.publicKey,
+    webhookUrl: updatedApp.webhookUrl,
+    webhookSecret: updatedApp.webhookSecret,
+    hasPrivateKey: Boolean(updatedApp.privateKey)
   });
 };
 
