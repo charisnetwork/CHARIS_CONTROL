@@ -71,9 +71,13 @@ export const SubscriptionsList = () => {
   // Export to CSV
   const exportCsv = () => {
     const headers = ['ID,Customer,Email,Plan,Status,Period Start,Period End\n'];
-    const rows = subscriptions.map(sub => 
-      `${sub.id},"${sub.customer?.name || ''}","${sub.customer?.email || ''}","${sub.plan?.name || ''}",${sub.status},${format(new Date(sub.currentPeriodStart), 'yyyy-MM-dd')},${format(new Date(sub.currentPeriodEnd), 'yyyy-MM-dd')}`
-    ).join('\n');
+    const rows = subscriptions.map((sub: any) => {
+      const s = sub.currentPeriodStart || sub.startDate;
+      const e = sub.currentPeriodEnd || sub.endDate;
+      const startStr = s ? format(new Date(s), 'yyyy-MM-dd') : '';
+      const endStr = e ? format(new Date(e), 'yyyy-MM-dd') : '';
+      return `${sub.id},"${sub.customer?.name || ''}","${sub.customer?.email || ''}","${sub.plan?.name || ''}",${sub.status},${startStr},${endStr}`;
+    }).join('\n');
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -229,8 +233,14 @@ export const SubscriptionsList = () => {
                     </td>
                     <td className="px-6 py-4 text-[var(--text-secondary)]">
                       <div className="text-xs">
-                        <div><span className="text-[var(--text-muted)]">Starts:</span> {format(new Date(sub.currentPeriodStart), 'MMM d, yyyy')}</div>
-                        <div><span className="text-[var(--text-muted)]">Ends:</span> {format(new Date(sub.currentPeriodEnd), 'MMM d, yyyy')}</div>
+                        <div>
+                          <span className="text-[var(--text-muted)]">Starts:</span>{' '}
+                          {sub.currentPeriodStart || sub.startDate ? format(new Date(sub.currentPeriodStart || sub.startDate), 'MMM d, yyyy') : 'N/A'}
+                        </div>
+                        <div>
+                          <span className="text-[var(--text-muted)]">Ends:</span>{' '}
+                          {sub.currentPeriodEnd || sub.endDate ? format(new Date(sub.currentPeriodEnd || sub.endDate), 'MMM d, yyyy') : 'N/A'}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
