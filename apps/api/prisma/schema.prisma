@@ -204,6 +204,8 @@ model Application {
   mappings               ApplicationMapping[]
   subscriptionReferences SubscriptionReference[]
   webhookDeliveries      WebhookDelivery[]
+  featureGroups          FeatureGroup[]
+  features               Feature[]
 }
 
 model AuditLog {
@@ -274,6 +276,9 @@ model Plan {
   order               Int               @default(0)
   perks               Json              @default("[]")
   pricingMatrix       Json              @default("{}") // Maps duration codes '1m','3m','6m','1y','2y','3y' to prices
+  priceMonthly        Decimal?          @default(0) @db.Decimal(12, 2)
+  priceYearly         Decimal?          @default(0) @db.Decimal(12, 2)
+  currency            String            @default("INR")
   isActive            Boolean           @default(true)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
@@ -326,19 +331,38 @@ model PlanPromotion {
   updatedAt      DateTime @updatedAt
 }
 
+model FeatureGroup {
+  id            String       @id @default(uuid())
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String
+  code          String       @unique
+  sortOrder     Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  features      Feature[]
+}
+
 model Feature {
-  id                  String            @id @default(uuid())
-  subscriptionModelId String
-  subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  name                String // e.g., Branches, Storage Limit
-  code                String // e.g., max_branches
+  id                  String             @id @default(uuid())
+  applicationId       String?
+  application         Application?       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  groupId             String?
+  group               FeatureGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  subscriptionModelId String?
+  subscriptionModel   SubscriptionModel? @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
+  name                String // e.g., Create Invoice, Multi-Business
+  code                String             @unique // e.g., create_invoice, multi_business
   description         String?
   category            String? // Group features visually
+  sortOrder           Int                @default(0)
 
-  fields    FeatureField[]
-  planEntitlements PlanFeatureEntitlement[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  fields                FeatureField[]
+  planEntitlements      PlanFeatureEntitlement[]
+  subscriptionOverrides SubscriptionFeatureOverride[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 }
 
 model PlanFeatureEntitlement {
@@ -353,6 +377,19 @@ model PlanFeatureEntitlement {
   updatedAt  DateTime @updatedAt
 
   @@unique([planId, featureId])
+}
+
+model SubscriptionFeatureOverride {
+  id                      String                @id @default(uuid())
+  subscriptionReferenceId String
+  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id], onDelete: Cascade)
+  featureId               String
+  feature                 Feature               @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  isEnabledOverride       Boolean
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  @@unique([subscriptionReferenceId, featureId])
 }
 
 model FeatureField {
@@ -558,6 +595,7 @@ model SubscriptionReference {
   events          SubscriptionEvent[]
   usagePeriods    SubscriptionUsagePeriod[]
   affiliateSales  AffiliateSale[]
+  featureOverrides SubscriptionFeatureOverride[]
 }
 
 model SubscriptionUsagePeriod {

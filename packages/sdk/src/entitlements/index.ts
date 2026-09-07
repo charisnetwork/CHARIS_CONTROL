@@ -63,6 +63,31 @@ export class EntitlementManager {
   requireFeature(feature: string) { return this.authorize((e) => e.features.includes(feature), 'Feature not permitted', { feature }); }
   requirePlan(plan: string) { return this.authorize((e) => e.planId === plan, 'Plan not permitted'); }
   checkLimit(limit: string, amount: number) { return this.authorize((e) => e.limits[limit] === -1 || (Number.isFinite(e.limits[limit]) && amount <= e.limits[limit]), `Limit exceeded for ${limit}`, { limit, amount }); }
+
+  enforceLicenseState() {
+    return async (req: any, res: any, next: any) => {
+      try {
+        const tenantId = req.companyId || req.user?.company_id;
+        if (!tenantId) return next();
+        const entitlement = await this.getEntitlement(tenantId);
+        if (!entitlement) return next();
+
+        const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+        if (isWriteMethod && ['READ_ONLY', 'EXPIRED', 'PAST_DUE', 'CANCELLED'].includes(entitlement.status)) {
+          return res.status(402).json({
+            error: 'LICENSE_EXPIRED',
+            status: entitlement.status,
+            upgradeRequired: true,
+            message: 'Your subscription is expired or read-only. Please renew or upgrade to perform write operations.'
+          });
+        }
+        next();
+      } catch {
+        next();
+      }
+    };
+  }
+
   private authorize(check: (entitlement: EntitlementPayload) => boolean, message: string, context?: { feature?: string; limit?: string; amount?: number }) {
     return async (req: any, res: any, next: any) => {
       try {
@@ -78,7 +103,7 @@ export class EntitlementManager {
         }
         if (entitlement.tenantId !== tenantId || !['ACTIVE', 'TRIAL'].includes(entitlement.status) || !check(entitlement)) {
           if (context?.limit) return res.status(403).json({ error: 'QUOTA_EXCEEDED', limit: context.limit, upgradeRequired: true, message });
-          if (context?.feature) return res.status(403).json({ error: 'FEATURE_NOT_AVAILABLE', feature: context.feature, upgradeRequired: true, message });
+          if (context?.feature) return res.status(403).json({ error: 'FEATURE_NOT_ENABLED_FOR_PLAN', feature: context.feature, upgradeRequired: true, message });
           return res.status(403).json({ error: message, upgradeRequired: true });
         }
         req.entitlement = entitlement; next();

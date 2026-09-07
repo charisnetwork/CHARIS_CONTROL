@@ -1,16 +1,19 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export const getPublicCatalog = async (req: Request, res: Response) => {
   try {
     const applicationSlug = req.params.applicationSlug as string;
-    
-    // In a real app, applicationSlug might map to applicationName
-    const app = await prisma.application.findUnique({
-      where: { applicationName: applicationSlug },
+
+    const app = await prisma.application.findFirst({
+      where: { OR: [{ applicationName: applicationSlug }, { displayName: applicationSlug }] },
       include: {
+        featureGroups: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            features: { orderBy: { sortOrder: 'asc' } }
+          }
+        },
         mappings: {
           include: {
             subscriptionModel: {
@@ -19,15 +22,10 @@ export const getPublicCatalog = async (req: Request, res: Response) => {
                   where: { isActive: true },
                   orderBy: { order: 'asc' },
                   include: {
-                    priceOptions: {
-                      where: { isActive: true }
-                    },
-                    featureEntitlements: {
-                      include: { feature: true }
-                    }
+                    priceOptions: { where: { isActive: true } },
+                    featureEntitlements: { include: { feature: true } }
                   }
-                },
-                features: true
+                }
               }
             }
           }
@@ -57,43 +55,61 @@ export const getPublicCatalog = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Application not found' });
     }
 
-    // Prepare safe catalog data (Zero secrets)
-    const catalog = {
+    const featureGroups = app.featureGroups.map(g => ({
+      id: g.id,
+      name: g.name,
+      code: g.code,
+      sortOrder: g.sortOrder,
+      features: g.features.map(f => ({
+        id: f.id,
+        name: f.name,
+        code: f.code,
+        description: f.description,
+        sortOrder: f.sortOrder
+      }))
+    }));
+
+    const plans = app.mappings.flatMap(m => m.subscriptionModel.plans).map(plan => {
+      const entitlementsMap: Record<string, boolean> = {};
+      plan.featureEntitlements.forEach(fe => {
+        if (fe.feature?.code) {
+          entitlementsMap[fe.feature.code] = fe.isEnabled;
+        }
+      });
+
+      return {
+        id: plan.id,
+        name: plan.name,
+        code: plan.code,
+        badge: plan.badge,
+        isRecommended: plan.isRecommended,
+        priceMonthly: plan.priceMonthly,
+        priceYearly: plan.priceYearly,
+        currency: plan.currency,
+        description: plan.description,
+        order: plan.order,
+        perks: plan.perks,
+        pricingMatrix: plan.pricingMatrix,
+        entitlements: entitlementsMap,
+        features: plan.featureEntitlements.map(fe => ({
+          code: fe.feature.code,
+          name: fe.feature.name,
+          isEnabled: fe.isEnabled
+        }))
+      };
+    });
+
+    return res.json({
       applicationName: app.displayName || app.applicationName,
       logo: app.logo,
       description: app.description,
-      subscriptionModels: app.mappings.map((mapping: any) => {
-        const sm = mapping.subscriptionModel;
-        return {
-          id: sm.id,
-          name: sm.name,
-          description: sm.description,
-          plans: sm.plans.map((plan: any) => ({
-            id: plan.id,
-            name: plan.name,
-            code: plan.code,
-            badge: plan.badge,
-            isRecommended: plan.isRecommended,
-            description: plan.description,
-            perks: plan.perks,
-            pricingMatrix: plan.pricingMatrix,
-            durations: ['1m', '3m', '6m', '1y', '2y', '3y'], // Available duration options
-            features: plan.featureEntitlements.map((fe: any) => ({
-              code: fe.feature.code,
-              name: fe.feature.name,
-              isEnabled: fe.isEnabled,
-              limitValue: fe.limitValue,
-              category: fe.feature.category
-            }))
-          }))
-        };
-      }),
-      publicOffers: app.offers
-    };
-
-    return res.json(catalog);
+      featureGroups,
+      plans,
+      offers: app.offers
+    });
   } catch (error) {
     console.error('Error fetching public catalog:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
