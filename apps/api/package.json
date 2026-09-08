@@ -6,11 +6,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/index.ts",
-    "build": "npx prisma generate && tsc",
+    "build": "npx prisma generate --schema=prisma/schema.prisma && tsc",
     "start": "node dist/index.js",
-    "db:generate": "prisma generate",
-    "db:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "db:seed": "prisma db seed --schema=prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
