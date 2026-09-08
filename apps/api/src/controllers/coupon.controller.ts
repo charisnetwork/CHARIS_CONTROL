@@ -21,7 +21,7 @@ export const createCoupon = async (req: Request, res: Response) => {
       applicationId,
       discountType,
       discountValue: Number(discountValue),
-      maxUses: maxUses ? Number(maxUses) : null,
+      totalUsageLimit: maxUses ? Number(maxUses) : null,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       applicablePlans: Array.isArray(applicablePlans) ? applicablePlans.map(String) : [],
       isActive: isActive !== undefined ? isActive : true

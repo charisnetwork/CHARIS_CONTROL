@@ -69,7 +69,18 @@ export const getPublicCatalog = async (req: Request, res: Response) => {
       }))
     }));
 
-    const plans = app.mappings.flatMap(m => m.subscriptionModel.plans).map(plan => {
+    // A product can retain historical mappings. Publish every active commercial
+    // plan only once, even when a plan is reachable through more than one mapping.
+    const catalogPlans = Array.from(
+      new Map(
+        app.mappings
+          .flatMap(mapping => mapping.subscriptionModel.plans)
+          .filter(plan => plan.code?.toLowerCase() !== 'test' && plan.name.trim().toLowerCase() !== 'test')
+          .map(plan => [plan.id, plan])
+      ).values()
+    );
+
+    const plans = catalogPlans.map(plan => {
       const entitlementsMap: Record<string, boolean> = {};
       plan.featureEntitlements.forEach(fe => {
         if (fe.feature?.code) {
@@ -90,6 +101,12 @@ export const getPublicCatalog = async (req: Request, res: Response) => {
         order: plan.order,
         perks: plan.perks,
         pricingMatrix: plan.pricingMatrix,
+        prices: plan.priceOptions.map(option => ({
+          durationMonths: option.durationMonths,
+          currency: option.currency,
+          amount: option.baseAmount,
+          baseAmount: option.baseAmount,
+        })),
         entitlements: entitlementsMap,
         features: plan.featureEntitlements.map(fe => ({
           code: fe.feature.code,
@@ -112,4 +129,3 @@ export const getPublicCatalog = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
-

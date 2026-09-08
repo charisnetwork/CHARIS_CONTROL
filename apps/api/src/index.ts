@@ -179,13 +179,17 @@ const DEFAULT_FEATURES = [
 
 const seedDefaultAdminUser = async () => {
   try {
-    const adminPassword = process.env.ADMIN_PASSWORD || process.env.BOOTSTRAP_ADMIN_PASSWORD || 'nishu@143';
+    const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+    const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
+    const billEasyApiKey = process.env.BOOTSTRAP_BILLEASY_API_KEY;
+    const billEasyWebhookSecret = process.env.BOOTSTRAP_BILLEASY_WEBHOOK_SECRET;
+    if (!adminPassword || !adminEmail || !billEasyApiKey || !billEasyWebhookSecret) {
+      console.warn('Bootstrap seed skipped: required bootstrap environment variables are not configured.');
+      return;
+    }
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-    const adminEmails = [
-      process.env.ADMIN_EMAIL || process.env.BOOTSTRAP_ADMIN_EMAIL || 'pachu@gmail.com',
-      'pachu.mgd@gmail.com'
-    ];
+    const adminEmails = [adminEmail];
 
     for (const email of adminEmails) {
       await prisma.adminUser.upsert({
@@ -194,7 +198,7 @@ const seedDefaultAdminUser = async () => {
         create: {
           email,
           password: hashedPassword,
-          firstName: 'Pachu',
+          firstName: 'Bootstrap',
           lastName: 'Admin',
           role: 'SUPER_ADMIN',
           isActive: true
@@ -213,10 +217,10 @@ const seedDefaultAdminUser = async () => {
           applicationName: 'billeasy',
           displayName: 'Bill Easy',
           description: 'Billing, Invoicing & Inventory Management System',
-          apiKey: 'billeasy_live_api_key_2026',
+          apiKey: billEasyApiKey,
           apiBaseUrl: 'https://bill-easy-production.up.railway.app',
           webhookUrl: 'https://bill-easy-production.up.railway.app/api/webhooks/charis',
-          webhookSecret: 'billeasy_webhook_secret_2026',
+          webhookSecret: billEasyWebhookSecret,
           status: 'ACTIVE'
         }
       });
@@ -384,8 +388,8 @@ const seedDefaultAdminUser = async () => {
           applicationId: app.id,
           planId: proPlan.id,
           customerId: 'tenant_abc_traders',
-          customerName: 'ABC Traders Pvt Ltd',
-          customerEmail: 'pachu.mgd@gmail.com',
+          customerName: 'Bootstrap Demo Tenant',
+          customerEmail: process.env.BOOTSTRAP_DEMO_CUSTOMER_EMAIL,
           status: 'ACTIVE',
           billingCycle: 'YEARLY',
           startDate: new Date(),
@@ -412,6 +416,8 @@ const PORT = process.env.PORT || 4000;
 
 httpServer.listen(PORT, () => {
   WebhookService.startDeliveryWorker();
-  seedDefaultAdminUser();
+  if (process.env.ENABLE_BOOTSTRAP_SEED === 'true') {
+    void seedDefaultAdminUser();
+  }
   console.log(`Server is running on port ${PORT}`);
 });

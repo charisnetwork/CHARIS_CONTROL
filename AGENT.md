@@ -34,6 +34,9 @@ The Control Centre returns an RSA-SHA256 signed compact token:
 - Hardened quote/subscription behavior: supported durations are explicit, duration tiers are calculated period-by-period, coupon codes are uppercase, plan scope is enforced, and coupon consumption is recorded atomically with the subscription snapshot.
 - Entitlement fallback now grants only explicit plan entitlements, never every feature in a subscription model. SDK denials return structured feature/quota upgrade responses and accept the documented entitlement header form.
 - Bill Easy now exposes its approved, API-key-guarded `/control` adapter for health, tenant, usage, activity, and revenue projections. Its public pricing views consume the Control Centre public catalog without browser credentials; if unavailable they show an explicit unavailable state rather than fabricated pricing.
+- Production bootstrap seeding is now opt-in (`ENABLE_BOOTSTRAP_SEED=true`) and requires dedicated bootstrap environment variables. Runtime startup no longer creates credentials, demo tenants, subscriptions, or commercial catalog data by default.
+- Authorization now accepts only tokens signed with `JWT_SECRET`, validates a declared role, and enforces the exact role set required by each protected route. Coupon creation now persists its usage limit using the Prisma `totalUsageLimit` field.
+- The public catalog de-duplicates mapped plans, omits test-only catalog rows, and includes normalized price-option data for downstream storefronts.
 
 ## Verification
 

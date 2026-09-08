@@ -19,39 +19,26 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 
   const token = authHeader.split(' ')[1];
-  const primarySecret = jwtSecret();
-  const secondarySecrets = [
-    primarySecret,
-    process.env.ADMIN_SECRET_PIN,
-    process.env.ADMIN_SECRET,
-    process.env.JWT_SECRET
-  ].filter(Boolean) as string[];
-
-  let decodedUser: any = null;
-
-  for (const secret of secondarySecrets) {
-    try {
-      decodedUser = jwt.verify(token, secret);
-      if (decodedUser) break;
-    } catch (_) {
-      // Continue trying next secret
-    }
-  }
-
-  if (!decodedUser) {
+  let decodedUser: jwt.JwtPayload | string;
+  try {
+    decodedUser = jwt.verify(token, jwtSecret());
+  } catch (_) {
     throw new AppError('Unauthorized: Invalid or expired token. Please log in again.', 401);
   }
 
-  const rawRole = String(decodedUser.role || 'SUPER_ADMIN').toUpperCase().replace(/_/g, '');
-  let normalizedRole: AdminRole = AdminRole.SUPER_ADMIN;
-  if (rawRole.includes('ADMIN')) {
-    normalizedRole = AdminRole.SUPER_ADMIN;
+  if (typeof decodedUser === 'string' || !decodedUser.id || !decodedUser.email || !decodedUser.role) {
+    throw new AppError('Unauthorized: Invalid token payload.', 401);
+  }
+
+  const role = String(decodedUser.role) as AdminRole;
+  if (!Object.values(AdminRole).includes(role)) {
+    throw new AppError('Unauthorized: Invalid token role.', 401);
   }
 
   req.user = {
-    id: decodedUser.id || 'admin',
-    email: decodedUser.email || 'admin@charis.com',
-    role: normalizedRole
+    id: String(decodedUser.id),
+    email: String(decodedUser.email),
+    role
   };
 
   next();
@@ -64,15 +51,7 @@ export const requireRoles = (roles: (AdminRole | string)[]) => {
     if (!req.user) {
       throw new AppError('Unauthorized: User not authenticated', 401);
     }
-    const userRole = String(req.user.role || '').toUpperCase().replace(/_/g, '');
-    const allowedRoles = roles.map(r => String(r).toUpperCase().replace(/_/g, ''));
-    
-    const isAllowed = allowedRoles.includes(userRole) || 
-                      userRole === 'SUPERADMIN' || 
-                      userRole === 'ADMIN' ||
-                      userRole.includes('ADMIN');
-
-    if (!isAllowed) {
+    if (!roles.includes(req.user.role)) {
       throw new AppError('Forbidden: Insufficient permissions', 403);
     }
     next();
