@@ -49,7 +49,7 @@ const ApplicationCard = ({ app, deleteMutation }: { app: any, deleteMutation: an
   const queryClient = useQueryClient();
 
   const getApiUrl = (path: string) => {
-    const base = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
+    const base = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
     return `${base}${path}`;
   };
 
@@ -124,7 +124,8 @@ const ApplicationCard = ({ app, deleteMutation }: { app: any, deleteMutation: an
   const activeWebhookUrl = credentials?.webhookUrl || app.webhookUrl || '';
   const activeAppId = credentials?.id || app.id || '';
 
-  const formattedEnvBlock = `CONTROL_CENTER_URL=https://chariscontrol-production.up.railway.app
+  const envApiBaseUrl = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
+  const formattedEnvBlock = `CONTROL_CENTER_URL=${envApiBaseUrl || 'https://your-control-centre-backend.example.com'}
 CONTROL_CENTER_APPLICATION_ID=${activeAppId}
 CONTROL_CENTER_API_KEY=${activeApiKey}
 CONTROL_CENTER_PUBLIC_KEY="${(activePublicKey || '').replace(/\n/g, '\\n')}"
@@ -393,7 +394,8 @@ export const ProductsList = () => {
   const { data: applications = [], isLoading } = useQuery({
     queryKey: ['applications'],
     queryFn: async () => {
-      const res = await axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`);
+      const baseUrl = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
+      const res = await axios.get(`${baseUrl}/api/applications`);
       setProducts(res.data);
       return res.data;
     }
@@ -401,7 +403,8 @@ export const ProductsList = () => {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`, data);
+      const baseUrl = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
+      const res = await axios.post(`${baseUrl}/api/applications`, data);
       return res.data;
     },
     onSuccess: () => {
@@ -413,7 +416,8 @@ export const ProductsList = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await axios.delete(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications/${id}`);
+      const baseUrl = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
+      await axios.delete(`${baseUrl}/api/applications/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });

@@ -8,10 +8,10 @@ const host = window.location.host;
 const isGateway = window.location.pathname.startsWith('/admin-portal');
 
 // All admin API calls go through the main backend at /api/admin/*
-// Railway only exposes one port, admin routes are served from main backend
-const API_BASE_URL = isGateway 
-  ? '/admin/api'  // Through gateway - use relative path
-  : ((import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')) + '/api/admin';
+// Prefer the configured backend origin; fall back to a same-origin gateway path when present.
+const API_BASE_URL = isGateway
+  ? '/admin/api'
+  : `${(import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '')}/api/admin`;
 
 console.log('[Admin Login] API_BASE_URL:', API_BASE_URL, '| Host:', host, '| isGateway:', isGateway);
 

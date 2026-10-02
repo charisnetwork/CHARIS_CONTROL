@@ -6,7 +6,7 @@ import { AlertCircle, CheckCircle, Edit2, Plus, X, Star, ChevronRight, Sliders, 
 import { useProductStore } from '../../store/productStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
 const DURATIONS = [1, 3, 6, 12, 24, 36];
 
 type Feature = { id: string; name: string; code: string; description?: string; sortOrder: number };

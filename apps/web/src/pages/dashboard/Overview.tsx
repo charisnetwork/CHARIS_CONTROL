@@ -34,7 +34,10 @@ export function Overview() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboardStats', selectedProduct?.id, isAllApplications],
     queryFn: async () => {
-      const apiBase = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
+      const apiBase = import.meta.env.VITE_CONTROL_API_URL?.trim().replace(/\/+$/, '');
+      if (!apiBase) {
+        throw new Error('VITE_CONTROL_API_URL is not configured');
+      }
       const params = (!isAllApplications && selectedProduct?.id) ? { applicationId: selectedProduct.id } : {};
       const response = await axios.get(`${apiBase}/api/dashboard/stats`, { params });
       return response.data;

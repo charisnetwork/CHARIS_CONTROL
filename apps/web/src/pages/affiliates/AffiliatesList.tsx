@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE = (import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_CONTROL_API_URL ?? '').trim().replace(/\/+$/, '');
 
 type Affiliate = {
   id: string;
