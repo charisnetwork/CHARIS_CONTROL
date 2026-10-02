@@ -8,19 +8,10 @@ WORKDIR /service
 
 RUN addgroup --system charis && adduser --system --ingroup charis charis
 
-# Railway can build from either the monorepo root or directly from this app folder.
-# Copy the source tree and normalize the files regardless of which layout is used.
-COPY . /tmp/source
-
-RUN if [ -d /tmp/source/apps/control_api ]; then \
-        cp /tmp/source/apps/control_api/pyproject.toml /tmp/source/apps/control_api/alembic.ini /service/; \
-        cp -a /tmp/source/apps/control_api/alembic /service/; \
-        cp -a /tmp/source/apps/control_api/app /service/; \
-    else \
-        cp /tmp/source/pyproject.toml /tmp/source/alembic.ini /service/; \
-        cp -a /tmp/source/alembic /service/; \
-        cp -a /tmp/source/app /service/; \
-    fi
+# This variant is intended for builds run directly from the app directory.
+COPY pyproject.toml alembic.ini ./
+COPY alembic ./alembic
+COPY app ./app
 
 RUN pip install .
 
