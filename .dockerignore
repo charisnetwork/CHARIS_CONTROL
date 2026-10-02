@@ -1,0 +1,10 @@
+.git
+node_modules
+apps/web/node_modules
+apps/web/dist
+apps/control_api/.venv
+apps/control_api/.env
+apps/control_api/.mypy_cache
+apps/control_api/.pytest_cache
+**/__pycache__
+**/*.pyc

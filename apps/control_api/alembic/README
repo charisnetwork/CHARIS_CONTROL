@@ -1,0 +1,5 @@
+This directory contains reviewed PostgreSQL migrations for the FastAPI backend.
+
+Create revisions from apps/control_api with `alembic revision --autogenerate` and
+apply them only through `alembic upgrade head`. Do not use schema push commands.
+

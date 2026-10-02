@@ -1,12 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
 
-export const createHttpClient = (gatewayUrl: string, apiKey: string, productId: string): AxiosInstance => {
+export const createHttpClient = (gatewayUrl: string, apiKey: string, applicationId: string): AxiosInstance => {
   const client = axios.create({
     baseURL: gatewayUrl,
     headers: {
       'Content-Type': 'application/json',
-      'X-Charis-API-Key': apiKey,
-      'X-Charis-Product-Id': productId,
+      'X-Charis-App-Key': apiKey,
+      'X-Charis-Application-Id': applicationId,
     },
   });
 

@@ -13,8 +13,8 @@ const ProductSelectionScreen: React.FC<Props> = ({ api }) => {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Product>>({
     productName: '', displayName: '', logo: '', description: '', version: '1.0.0',
-    environment: 'PRODUCTION', apiBaseUrl: '', healthApi: '', customerApi: '',
-    subscriptionApi: '', couponApi: '', notificationApi: '', authenticationMethod: 'JWT', status: 'ACTIVE'
+    environment: 'production', apiBaseUrl: '', healthApi: '', customerApi: '',
+    subscriptionApi: '', couponApi: '', notificationApi: '', authenticationMethod: 'JWT', status: 'active'
   });
 
   useEffect(() => {

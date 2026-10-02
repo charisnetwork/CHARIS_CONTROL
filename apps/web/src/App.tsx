@@ -1,121 +1,101 @@
-import { RouterProvider, createBrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import {
+  Navigate,
+  Outlet,
+  RouterProvider,
+  createBrowserRouter,
+  useParams,
+} from 'react-router-dom';
 import { DashboardLayout } from './layouts/DashboardLayout';
+import { Affiliates } from './pages/applications/Affiliates';
+import { ApplicationOverview } from './pages/applications/ApplicationOverview';
+import { ApplicationSelection } from './pages/applications/ApplicationSelection';
+import { Coupons } from './pages/applications/Coupons';
+import { Notifications } from './pages/applications/Notifications';
+import { Reports } from './pages/applications/Reports';
+import { Settings } from './pages/applications/Settings';
+import { PlansCatalog } from './pages/applications/PlansCatalog';
+import { Subscribers } from './pages/applications/Subscribers';
+import { Subscriptions } from './pages/applications/Subscriptions';
 import Login from './pages/auth/Login';
-import { Overview } from './pages/dashboard/Overview';
-import { SubscriptionsList } from './pages/subscriptions/SubscriptionsList';
-import { PlansList } from './pages/subscriptions/PlansList';
-import { ProductsList } from './pages/products/ProductsList';
-import AdminDashboard from './pages/AdminDashboard';
+import { listApplications, restoreSession } from './services/controlApi';
 import { useAuthStore } from './store/authStore';
 import { useProductStore } from './store/productStore';
-import { Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
-import axios from 'axios';
 
-import { CustomersList } from './pages/customers/CustomersList';
-import { CouponsList } from './pages/coupons/CouponsList';
-import { OffersList } from './pages/offers/OffersList';
-import { MarketingList } from './pages/marketing/MarketingList';
-import { NotificationsList } from './pages/notifications/NotificationsList';
-import { ReportsList } from './pages/reports/ReportsList';
-import { AffiliatesList } from './pages/affiliates/AffiliatesList';
-
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+function ProtectedRoute() {
   const token = useAuthStore((state) => state.token);
-  if (!token) {
-    return <Navigate to="/login" replace />;
+  const initialized = useAuthStore((state) => state.initialized);
+  if (!initialized) {
+    return <div className="grid min-h-screen place-items-center text-slate-400">Restoring session…</div>;
   }
-  return <>{children}</>;
-};
+  return token ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
+function ApplicationScope() {
+  const { appId } = useParams();
+  const setProducts = useProductStore((state) => state.setProducts);
+  const selectProduct = useProductStore((state) => state.selectProduct);
+  const selectedProduct = useProductStore((state) => state.selectedProduct);
+  const applications = useQuery({ queryKey: ['applications'], queryFn: listApplications });
+
+  useEffect(() => {
+    if (!applications.data) return;
+    setProducts(applications.data);
+    selectProduct(appId ?? null);
+  }, [appId, applications.data, selectProduct, setProducts]);
+
+  if (applications.isError) return <Navigate to="/apps" replace />;
+  if (applications.data && !applications.data.some((application) => application.id === appId)) {
+    return <Navigate to="/apps" replace />;
+  }
+  if (applications.isPending || selectedProduct?.id !== appId) {
+    return <div className="grid min-h-screen place-items-center text-slate-400">Loading application…</div>;
+  }
+  return <Outlet />;
+}
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: 1,
-    },
-  },
+  defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
 });
 
 const router = createBrowserRouter([
+  { path: '/login', element: <Login /> },
   {
-    path: "/login",
-    element: <Login />,
-  },
-  {
-    path: "/",
-    element: (
-      <ProtectedRoute>
-        <DashboardLayout />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute />,
     children: [
+      { path: '/', element: <Navigate to="/apps" replace /> },
+      { path: '/apps', element: <ApplicationSelection /> },
       {
-        index: true,
-        element: <Overview />,
+        path: '/apps/:appId',
+        element: <ApplicationScope />,
+        children: [
+          {
+            element: <DashboardLayout />,
+            children: [
+              { index: true, element: <Navigate to="overview" replace /> },
+              { path: 'overview', element: <ApplicationOverview /> },
+              { path: 'subscribers', element: <Subscribers /> },
+              { path: 'subscriptions', element: <Subscriptions /> },
+              { path: 'plans', element: <PlansCatalog /> },
+              { path: 'coupons', element: <Coupons /> },
+              { path: 'affiliates', element: <Affiliates /> },
+              { path: 'notifications', element: <Notifications /> },
+              { path: 'reports', element: <Reports /> },
+              { path: 'settings', element: <Settings /> },
+            ],
+          },
+        ],
       },
-      {
-        path: "subscriptions",
-        element: <SubscriptionsList />
-      },
-      {
-        path: "plans",
-        element: <PlansList />
-      },
-      {
-        path: "products",
-        element: <ProductsList />
-      },
-      {
-        path: "customers",
-        element: <CustomersList />
-      },
-      {
-        path: "coupons",
-        element: <CouponsList />
-      },
-      {
-        path: "offers",
-        element: <OffersList />
-      },
-      {
-        path: "marketing",
-        element: <MarketingList />
-      },
-      {
-        path: "notifications",
-        element: <NotificationsList />
-      },
-      {
-        path: "reports",
-        element: <ReportsList />
-      },
-      {
-        path: "affiliates",
-        element: <AffiliatesList />
-      }
     ],
   },
-  {
-    path: "/admin-dashboard",
-    element: (
-      <ProtectedRoute>
-        <AdminDashboard />
-      </ProtectedRoute>
-    )
-  },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
 function App() {
-  const setProducts = useProductStore(state => state.setProducts);
-
   useEffect(() => {
-    // Initial fetch of applications to populate the context switcher
-    axios.get(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/applications`)
-      .then(res => setProducts(res.data))
-      .catch(err => console.error('Failed to fetch applications', err));
-  }, [setProducts]);
+    void restoreSession();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

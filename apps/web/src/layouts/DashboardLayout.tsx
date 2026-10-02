@@ -1,173 +1,87 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  LayoutDashboard,
-  Package,
-  Users,
-  CreditCard,
-  Ticket,
-  Bell,
-  Activity,
   BarChart3,
+  Bell,
+  ChevronDown,
+  CreditCard,
+  LayoutDashboard,
+  Menu,
+  Package,
   Search,
   Settings,
-  Menu,
-  ChevronDown,
-  Globe
+  Ticket,
+  Users,
 } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useProductStore } from '../store/productStore';
 
-export function cn(...inputs: ClassValue[]) {
+function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const NAVIGATION = [
-  { name: 'Dashboard', to: '/', icon: LayoutDashboard },
-  { name: 'Applications', to: '/products', icon: Package },
-  { name: 'Customers', to: '/customers', icon: Users },
-  { name: 'Subscriptions', to: '/subscriptions', icon: CreditCard },
-  { name: 'Plans', to: '/plans', icon: Package },
-  { name: 'Coupons', to: '/coupons', icon: Ticket },
-  { name: 'Offers', to: '/offers', icon: Package }, // Or a gift icon
-  { name: 'Affiliates', to: '/affiliates', icon: Users },
-  { name: 'Marketing', to: '/marketing', icon: Activity },
-  { name: 'Notifications', to: '/notifications', icon: Bell },
-  { name: 'Reports', to: '/reports', icon: BarChart3 },
+const navigation = [
+  { name: 'Overview', path: 'overview', icon: LayoutDashboard },
+  { name: 'Subscribers', path: 'subscribers', icon: Users },
+  { name: 'Subscriptions', path: 'subscriptions', icon: CreditCard },
+  { name: 'Plans', path: 'plans', icon: Package },
+  { name: 'Coupons', path: 'coupons', icon: Ticket },
+  { name: 'Affiliates', path: 'affiliates', icon: Users },
+  { name: 'Notifications', path: 'notifications', icon: Bell },
+  { name: 'Reports', path: 'reports', icon: BarChart3 },
 ];
 
 export function DashboardLayout() {
   const location = useLocation();
-  const { products, selectedProduct, isAllApplications, selectProduct } = useProductStore();
+  const navigate = useNavigate();
+  const { appId } = useParams();
+  const products = useProductStore((state) => state.products);
+  const selectedProduct = useProductStore((state) => state.selectedProduct);
+  const basePath = `/apps/${appId}`;
 
   return (
-    <div className="flex h-screen w-full bg-[var(--bg-primary)] overflow-hidden text-[var(--text-primary)]">
-      {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-col transition-all duration-300">
-        <div className="h-16 flex items-center px-6 border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-primary flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-              <div className="w-4 h-4 rounded-full bg-primary-foreground" />
-            </div>
-            <span className="font-semibold tracking-tight text-lg">Charis Control</span>
-          </div>
+    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-primary)] text-[var(--text-primary)]">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-[var(--border-color)] bg-[var(--bg-secondary)]">
+        <div className="flex h-16 items-center border-b border-[var(--border-color)] px-6">
+          <button onClick={() => navigate('/apps')} className="flex items-center gap-2 text-left">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 shadow-lg shadow-blue-600/20"><span className="h-3.5 w-3.5 rounded-full bg-white" /></span>
+            <span className="text-lg font-semibold tracking-tight">Charis Control</span>
+          </button>
         </div>
-
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {NAVIGATION.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.to}
-              className={({ isActive }) => cn(
-                "group relative flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors duration-200",
-                isActive
-                  ? "text-white"
-                  : "text-[var(--text-secondary)] hover:text-white"
-              )}
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <motion.div
-                      layoutId="active-nav-bg"
-                      className="absolute inset-0 bg-[var(--bg-hover)] rounded-md -z-10"
-                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    />
-                  )}
-                  <item.icon className={cn("w-4 h-4 transition-transform group-hover:scale-110", isActive && "text-primary")} />
-                  {item.name}
-                </>
-              )}
+        <div className="px-3 pt-4">
+          <button onClick={() => navigate('/apps')} className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-left hover:border-blue-500/40">
+            <span className="min-w-0"><span className="block truncate text-sm font-medium">{selectedProduct?.displayName}</span><span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">{selectedProduct?.environment}</span></span>
+            <ChevronDown className="h-4 w-4 text-slate-500" />
+          </button>
+        </div>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+          {navigation.map((item) => (
+            <NavLink key={item.path} to={`${basePath}/${item.path}`} className={({ isActive }) => cn('group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors', isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/60 hover:text-white')}>
+              <item.icon className="h-4 w-4" />{item.name}
             </NavLink>
           ))}
         </nav>
-
-        <div className="p-4 border-t border-[var(--border-color)]">
-          <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-md text-sm font-medium text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-hover)]/50 transition-colors">
-            <Settings className="w-4 h-4" />
-            Settings
-          </button>
+        <div className="border-t border-[var(--border-color)] p-4">
+          <NavLink to={`${basePath}/settings`} className={({ isActive }) => cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm', isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/60 hover:text-white')}><Settings className="h-4 w-4" />Settings</NavLink>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header */}
-        <header className="h-16 flex items-center justify-between px-6 glass sticky top-0 z-10 border-b border-[var(--border-color)]">
-          <div className="flex items-center flex-1">
-            <button className="p-2 mr-4 rounded-md hover:bg-[var(--bg-hover)] lg:hidden">
-              <Menu className="w-5 h-5 text-[var(--text-secondary)]" />
-            </button>
-            <div className="relative w-full max-w-md hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input
-                type="text"
-                placeholder="Search resources..."
-                className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-full pl-9 pr-4 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-white placeholder-[var(--text-muted)] shadow-inner"
-              />
-            </div>
-            
-            {/* Product Selector Context */}
-            <div className="ml-6 relative group">
-              <button className="flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] px-3 py-1.5 rounded-lg hover:border-[var(--primary)] transition-colors">
-                {isAllApplications ? (
-                  <><Globe className="w-4 h-4 text-primary" /> <span className="text-sm font-medium">All Applications</span></>
-                ) : (
-                  <><Package className="w-4 h-4 text-emerald-400" /> <span className="text-sm font-medium">{selectedProduct?.displayName || 'Select Product'}</span></>
-                )}
-                <ChevronDown className="w-4 h-4 text-[var(--text-muted)] ml-2" />
-              </button>
-              
-              <div className="absolute top-full mt-1 left-0 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
-                <button
-                  onClick={() => selectProduct('all')}
-                  className={cn("w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-[var(--bg-hover)] transition-colors", isAllApplications && "bg-[var(--bg-hover)] text-primary")}
-                >
-                  <Globe className="w-4 h-4" /> All Applications
-                </button>
-                <div className="h-px bg-[var(--border-color)] my-1 w-full" />
-                <div className="max-h-60 overflow-y-auto">
-                  {products.map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => selectProduct(p.id)}
-                      className={cn("w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-[var(--bg-hover)] transition-colors", selectedProduct?.id === p.id && "bg-[var(--bg-hover)] text-emerald-400")}
-                    >
-                      <Package className="w-4 h-4" /> {p.displayName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="glass sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[var(--border-color)] px-6">
+          <div className="flex flex-1 items-center">
+            <button className="mr-4 rounded-md p-2 hover:bg-[var(--bg-hover)] lg:hidden" aria-label="Open navigation"><Menu className="h-5 w-5 text-slate-400" /></button>
+            <div className="relative hidden w-full max-w-md sm:block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" /><input type="search" placeholder={`Search ${selectedProduct?.displayName ?? 'application'}…`} className="w-full rounded-full border border-[var(--border-color)] bg-[var(--bg-card)] py-1.5 pl-9 pr-4 text-sm text-white outline-none focus:border-blue-500" /></div>
+            <select value={appId} onChange={(event) => navigate(`/apps/${event.target.value}/overview`)} className="ml-6 max-w-56 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+              {products.map((product) => <option key={product.id} value={product.id}>{product.displayName}</option>)}
+            </select>
           </div>
-
-          <div className="flex items-center gap-4">
-            <button className="p-2 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-white transition-colors relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-2 w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>
-            </button>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-purple-600 p-[2px] cursor-pointer hover:shadow-[0_0_15px_rgba(59,130,246,0.4)] transition-shadow">
-              <div className="w-full h-full rounded-full bg-[var(--bg-secondary)] flex items-center justify-center">
-                <Users className="w-4 h-4 text-[var(--text-secondary)]" />
-              </div>
-            </div>
-          </div>
+          <button className="relative rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Notifications"><Bell className="h-5 w-5" /></button>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 relative">
+        <main className="relative flex-1 overflow-y-auto p-6">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="h-full"
-            >
-              <Outlet />
-            </motion.div>
+            <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.16 }} className="h-full"><Outlet /></motion.div>
           </AnimatePresence>
         </main>
       </div>

@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - CONTROL_CENTRE_URL=http://control-centre:8000
+      - CONTROL_CENTRE_API_KEY=${CONTROL_CENTRE_API_KEY}
+      - CONTROL_CENTRE_WEBHOOK_SECRET=${CONTROL_CENTRE_WEBHOOK_SECRET}
+      - ENTITLEMENT_PRIVATE_KEY_PATH=/app/keys/private.pem
+      - ENTITLEMENT_PUBLIC_KEY_PATH=/app/keys/public.pem
+      - APP_ID=${APP_ID}
+      - CONTROL_API_SECRET=${CONTROL_API_SECRET}
+      - NODE_ENV=production
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=app_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

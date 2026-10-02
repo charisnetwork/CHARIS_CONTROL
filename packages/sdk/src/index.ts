@@ -12,12 +12,13 @@ import { EntitlementManager } from './entitlements';
 export * from './entitlements';
 
 export interface CharisSDKConfig {
-  productId: string;
+  /** Immutable Control Centre Application UUID. */
+  applicationId: string;
   apiKey: string;
   environment?: string;
   gatewayUrl?: string;
-  /** Immutable Control Centre Application UUID. */
-  applicationId?: string;
+  /** @deprecated Use applicationId. */
+  productId?: string;
   publicKey?: string;
   webhookSecret?: string;
 }
@@ -43,9 +44,9 @@ export class CharisClient {
     }
 
     const gatewayUrl = config.gatewayUrl || 'https://api.charisnetwork.com';
-    const client = createHttpClient(gatewayUrl, config.apiKey, config.productId);
+    const client = createHttpClient(gatewayUrl, config.apiKey, config.applicationId);
     this.http = client;
-    this.productId = config.productId;
+    this.productId = config.applicationId;
 
     this.auth = new AuthModule(this);
     this.registry = new CharisRegistry(client);
@@ -55,7 +56,7 @@ export class CharisClient {
     this.notifications = new CharisNotifications(client);
     this.monitoring = new CharisMonitoring();
     
-    if (config.publicKey && config.webhookSecret && config.applicationId) {
+    if (config.publicKey && config.webhookSecret) {
       this.entitlements = new EntitlementManager(config.applicationId, config.publicKey, config.webhookSecret, client);
     }
 
@@ -66,7 +67,7 @@ export class CharisClient {
     this.registry.startHeartbeat();
     this.featureFlags.fetchFlags();
 
-    console.log(`[CharisSDK] Initialized for product: ${config.productId}`);
+    console.log(`[CharisSDK] Initialized for application: ${config.applicationId}`);
   }
 }
 

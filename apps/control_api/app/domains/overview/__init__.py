@@ -1,0 +1,1 @@
+"""Selected-application overview domain."""

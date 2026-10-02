@@ -1,4 +1,6 @@
-// apps/api/prisma/schema.prisma
+// App-local database schema
+// Each app (Bill Easy, Charis Civil, etc.) gets its own PostgreSQL database with these tables
+// This schema is managed by the API App package, NOT by Control Centre
 
 generator client {
   provider = "prisma-client-js"
@@ -9,648 +11,612 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------
+// ============================================
 // ENUMS
-// ------------------------------------------------------
+// ============================================
 
-enum AdminRole {
-  SUPER_ADMIN
-  ADMIN
-  HR
-  ACCOUNTS
-  MARKETING
-  SUPPORT
-  READ_ONLY
-}
-
-enum AuditAction {
-  CREATE
-  UPDATE
-  DELETE
-  LOGIN
-  SUSPEND
-  ACTIVATE
-}
-
-enum ApplicationEnvironment {
-  PRODUCTION
-  DEVELOPMENT
-  SANDBOX
-}
-
-enum ApplicationStatus {
+enum SubscriberStatus {
   ACTIVE
-  INACTIVE
-  MAINTENANCE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum CouponKind {
+  PROMOTION
+  AFFILIATE
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum CouponStatus {
+  ACTIVE
+  SCHEDULED
+  EXPIRED
+  DISABLED
+}
+
+enum AffiliateStatus {
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+enum CommissionEntryType {
+  EARNED
+  PAID
+  ADJUSTMENT
+}
+
+enum NotificationStatus {
+  DRAFT
+  SCHEDULED
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  CRITICAL
+  UNKNOWN
 }
 
 enum WebhookDeliveryStatus {
   PENDING
+  PROCESSING
   DELIVERED
+  RETRYING
   FAILED
 }
 
-enum FieldType {
-  TEXT
-  TEXTAREA
-  NUMBER
-  CURRENCY
-  PERCENTAGE
-  BOOLEAN
-  DATE
-  DATETIME
-  DROPDOWN
-  CHECKBOX
-  RADIO
-  JSON
-  ARRAY
-  TAGS
-  ICON
-  COLOR
-  EMAIL
-  PHONE
-  URL
-  IMAGE
-  FILE
-  OBJECT
-  RELATION
-  CUSTOM_TYPE
-}
+// ============================================
+// CORE TABLES
+// ============================================
 
-// ------------------------------------------------------
-// CONTROL CENTER ADMIN MODELS
-// ------------------------------------------------------
-
-model AdminUser {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  firstName String
-  lastName  String
-  role      AdminRole @default(READ_ONLY)
-  isActive  Boolean   @default(true)
-  lastLogin DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  auditLogs AuditLog[]
-}
-
-model Affiliate {
-  id              String   @id @default(uuid())
-  companyName     String
-  contactPerson   String
-  email           String
-  mobileNo        String
-  address         String?
-  pan             String?
-  gstin           String?
-  affiliateCode   String?
-  couponCode      String?
-  commissionType  String   @default("percentage") // percentage, fixed
-  commissionBasis String   @default("net") // net, gross
-  commissionValue Float    @default(0)
-  status          String   @default("ACTIVE") // ACTIVE, PAUSED, EXPIRED, TERMINATED
-  payoutMethod    String?
-  payoutDetails   Json?
-  commissionPct   Float    @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  coupons         Coupon[]
-  sales           AffiliateSale[]
-  subscriptionReferences SubscriptionReference[]
-}
-
-model AffiliateSale {
-  id                      String   @id @default(uuid())
-  subscriptionReferenceId String
-  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id])
-  affiliateId             String
-  affiliate               Affiliate @relation(fields: [affiliateId], references: [id])
-  couponId                String?
-  coupon                  Coupon? @relation(fields: [couponId], references: [id])
-  couponCodeSnapshot      String?
-  grossAmount             Decimal  @db.Decimal(12, 2)
-  discountAmount          Decimal  @db.Decimal(12, 2)
-  netAmount               Decimal  @db.Decimal(12, 2)
-  commissionRateSnapshot  Json?
-  commissionAmount        Decimal  @db.Decimal(12, 2)
-  saleDate                DateTime @default(now())
-  paymentStatus           String   @default("PAID")
-  payoutStatus            String   @default("PENDING") // PENDING, APPROVED, PAID
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-}
-
-
-model PlatformExpense {
-  id          String   @id @default(uuid())
-  category    String
-  amount      Decimal  @db.Decimal(12, 2)
-  date        DateTime @db.Date
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model GlobalNotification {
-  id             String       @id @default(uuid())
-  title          String
-  message        String       @db.Text
-  targetAudience String       @default("all")
-  priority       String       @default("normal")
-  type           String       @default("in_app") // push, email, in_app
-  applicationId  String?
-  application    Application? @relation(fields: [applicationId], references: [id])
-  sentAt         DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-}
-
-// ------------------------------------------------------
-// SYSTEM MODELS (PLUG & PLAY REGISTRY)
-// ------------------------------------------------------
-
-model Application {
-  id                   String                 @id @default(uuid())
-  applicationName      String                 @unique
-  displayName          String
-  logo                 String?
-  description          String?
-  version              String?
-  environment          ApplicationEnvironment @default(PRODUCTION)
-  apiBaseUrl           String
-  healthApi            String?
-  customerApi          String?
-  subscriptionApi      String?
-  couponApi            String?
-  notificationApi      String?
-  authenticationMethod String?
-  apiKey               String?                @unique
-  apiSecret            String?
-  webhookUrl           String?
-  webhookSecret        String?
-  publicKey            String?
-  privateKey           String?
-  verificationInterval Int?
-  status               ApplicationStatus      @default(ACTIVE)
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-
-  coupons                Coupon[]
-  offers                 Offer[]
-  notifications          GlobalNotification[]
-  mappings               ApplicationMapping[]
-  subscriptionReferences SubscriptionReference[]
-  webhookDeliveries      WebhookDelivery[]
-  featureGroups          FeatureGroup[]
-  features               Feature[]
-}
-
-model AuditLog {
-  id        String      @id @default(uuid())
-  adminId   String?
-  admin     AdminUser?  @relation(fields: [adminId], references: [id])
-  action    AuditAction
-  module    String
-  targetId  String?
-  details   Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime    @default(now())
-}
-
-model ApiLog {
-  id              String   @id @default(uuid())
-  applicationName String
-  endpoint        String
-  method          String
-  statusCode      Int
-  responseTime    Int // in ms
-  createdAt       DateTime @default(now())
-}
-
-// ------------------------------------------------------
-// METADATA-DRIVEN SUBSCRIPTION PLATFORM
-// ------------------------------------------------------
-
-model SubscriptionModel {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  billingModels BillingModel[]
-  plans         Plan[]
-  features      Feature[]
-  versions      ModelVersion[]
-  mappings      ApplicationMapping[]
-}
-
-model BillingModel {
-  id                  String            @id @default(uuid())
-  subscriptionModelId String
-  subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  name                String // e.g., Monthly, Per User, Custom
-  description         String?
-  cycleType           String // e.g., RECURRING, ONE_TIME, USAGE
-  interval            String? // e.g., MONTH, YEAR, DAY
-  intervalCount       Int? // e.g., 1
-  metadata            Json? // Additional configuration
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-}
-
-model Plan {
-  id                  String            @id @default(uuid())
-  subscriptionModelId String
-  subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  name                String // e.g., Free, Starter, Enterprise
-  code                String?           @unique // immutable commercial identifier, e.g. billeasy.pro
-  badge               String?
-  isRecommended       Boolean           @default(false)
-  description         String?
-  order               Int               @default(0)
-  perks               Json              @default("[]")
-  pricingMatrix       Json              @default("{}") // Maps duration codes '1m','3m','6m','1y','2y','3y' to prices
-  priceMonthly        Decimal?          @default(0) @db.Decimal(12, 2)
-  priceYearly         Decimal?          @default(0) @db.Decimal(12, 2)
-  currency            String            @default("INR")
-  isActive            Boolean           @default(true)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-
-  subscriptionReferences SubscriptionReference[]
-  priceOptions          PlanPriceOption[]
-  promotions            PlanPromotion[]
-  featureEntitlements   PlanFeatureEntitlement[]
-  offers                Offer[]
-}
-
-model PlanPriceOption {
-  id          String   @id @default(uuid())
-  planId      String
-  plan        Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
-  durationMonths Int
-  currency    String   @default("INR")
-  baseAmount  Decimal  @db.Decimal(12, 2)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  tiers       PlanPriceTier[]
-  @@unique([planId, durationMonths, currency])
-}
-
-model PlanPriceTier {
-  id                String          @id @default(uuid())
-  planPriceOptionId String
-  planPriceOption   PlanPriceOption @relation(fields: [planPriceOptionId], references: [id], onDelete: Cascade)
-  periodNumber      Int
-  monthlyAmount     Decimal         @db.Decimal(12, 2)
-  createdAt         DateTime        @default(now())
-
-  @@unique([planPriceOptionId, periodNumber])
-}
-
-model PlanPromotion {
-  id             String   @id @default(uuid())
-  planId         String
-  plan           Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
-  name           String
-  discountType   String   // FIXED or PERCENTAGE
-  discountValue  Decimal  @db.Decimal(12, 2)
-  startsAt       DateTime
-  endsAt         DateTime
-  durationMonths Int?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-model FeatureGroup {
-  id            String       @id @default(uuid())
-  applicationId String?
-  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+model Subscriber {
+  id            String   @id @default(uuid())
+  externalId    String   @unique @map("external_id")
   name          String
-  code          String       @unique
-  sortOrder     Int          @default(0)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  email         String?  @unique
+  mobileNumber  String?  @map("mobile_number")
+  status        SubscriberStatus @default(ACTIVE)
+  metadata      Json     @default("{}")
+  archivedAt    DateTime? @map("archived_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  version       Int      @default(1)
 
-  features      Feature[]
+  subscriptions Subscription[]
+  usageCounters UsageCounter[]
+  couponRedemptions CouponRedemption[]
+  notificationDeliveries NotificationDelivery[]
+
+  @@index([email])
+  @@index([status])
+  @@map("subscribers")
+}
+
+model SubscriptionPlan {
+  id                  String   @id @default(uuid())
+  name                String
+  code                String   @unique(map: "subscription_plans_code_key")
+  description         String?
+  price               Decimal  @db.Decimal(19, 4)
+  currency            String   @default("USD") @db.Char(3)
+  durationValue       Int      @map("duration_value")
+  durationUnit        DurationUnit @map("duration_unit")
+  couponsAllowed      Boolean  @default(true) @map("coupons_allowed")
+  userLimit           Int?     @map("user_limit")
+  userLimitUnlimited  Boolean  @default(false) @map("user_limit_unlimited")
+  status              PlanStatus @default(DRAFT)
+  effectiveAt         DateTime? @map("effective_at")
+  archivedAt          DateTime? @map("archived_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  version             Int      @default(1)
+
+  entitlements        PlanEntitlement[]
+  subscriptions       Subscription[]
+  couponPlans         CouponPlan[]
+  notificationPlanAudiences NotificationPlanAudience[]
+
+  @@index([status])
+  @@map("subscription_plans")
+}
+
+enum DurationUnit {
+  DAY
+  MONTH
+  YEAR
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
 }
 
 model Feature {
-  id                  String             @id @default(uuid())
-  applicationId       String?
-  application         Application?       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  groupId             String?
-  group               FeatureGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  subscriptionModelId String?
-  subscriptionModel   SubscriptionModel? @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  name                String // e.g., Create Invoice, Multi-Business
-  code                String             @unique // e.g., create_invoice, multi_business
-  description         String?
-  category            String? // Group features visually
-  sortOrder           Int                @default(0)
+  id                    String   @id @default(uuid())
+  code                  String   @unique
+  name                  String
+  description           String?
+  defaultUnit           String?  @map("default_unit")
+  allowedResetPeriods   Json     @default("[]") @map("allowed_reset_periods")
+  supportsNumericLimit  Boolean  @default(true) @map("supports_numeric_limit")
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  version               Int      @default(1)
 
-  fields                FeatureField[]
-  planEntitlements      PlanFeatureEntitlement[]
-  subscriptionOverrides SubscriptionFeatureOverride[]
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  planEntitlements      PlanEntitlement[]
+  usageCounters         UsageCounter[]
+
+  @@index([code])
+  @@index([active])
+  @@map("app_features")
 }
 
-model PlanFeatureEntitlement {
-  id         String   @id @default(uuid())
-  planId     String
-  plan       Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
-  featureId  String
-  feature    Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  isEnabled  Boolean  @default(true)
-  limitValue String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model PlanEntitlement {
+  id            String     @id @default(uuid())
+  planId        String     @map("plan_id")
+  featureId     String     @map("feature_id")
+  enabled       Boolean    @default(true)
+  limitType     LimitType  @default(LIMITED) @map("limit_type")
+  limitValue    BigInt?    @map("limit_value")
+  unit          String?
+  resetPeriod   ResetPeriod? @map("reset_period")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  version       Int        @default(1)
+
+  plan          SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature       Feature          @relation(fields: [featureId], references: [id], onDelete: Restrict)
 
   @@unique([planId, featureId])
+  @@map("plan_entitlements")
 }
 
-model SubscriptionFeatureOverride {
-  id                      String                @id @default(uuid())
-  subscriptionReferenceId String
-  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id], onDelete: Cascade)
-  featureId               String
-  feature                 Feature               @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  isEnabledOverride       Boolean
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-
-  @@unique([subscriptionReferenceId, featureId])
+enum LimitType {
+  LIMITED
+  UNLIMITED
 }
 
-model FeatureField {
-  id           String    @id @default(uuid())
-  featureId    String
-  feature      Feature   @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  name         String
-  code         String
-  type         FieldType
-  options      Json? // For dropdowns, radio buttons, tags
-  defaultValue String?
-  order        Int       @default(0)
-
-  validationRules ValidationRule[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+enum ResetPeriod {
+  TOTAL
+  DAILY
+  MONTHLY
+  YEARLY
+  BILLING_CYCLE
 }
 
-model ValidationRule {
-  id             String       @id @default(uuid())
-  featureFieldId String
-  featureField   FeatureField @relation(fields: [featureFieldId], references: [id], onDelete: Cascade)
-  type           String // REQUIRED, MIN, MAX, REGEX, CONDITIONAL
-  value          String? // e.g. "10", "^[a-z]+$"
-  errorMessage   String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-}
+model Subscription {
+  id                    String             @id @default(uuid())
+  subscriberId          String             @map("subscriber_id")
+  planId                String             @map("plan_id")
+  externalId            String?            @unique @map("external_id")
+  status                SubscriptionStatus @default(PENDING)
+  startsAt              DateTime           @map("starts_at")
+  endsAt                DateTime?          @map("ends_at")
+  cancelledAt           DateTime?          @map("cancelled_at")
+  autoRenews            Boolean            @default(true) @map("auto_renews")
+  commercialSnapshot    Json               @default("{}") @map("commercial_snapshot")
+  entitlementSnapshot   Json               @default("{}") @map("entitlement_snapshot")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+  version               Int                @default(1)
 
-model ModelVersion {
-  id                  String            @id @default(uuid())
-  subscriptionModelId String
-  subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  versionNumber       Int
-  publishedAt         DateTime          @default(now())
-  publishedBy         String? // Admin ID
-  status              String            @default("ACTIVE") // ACTIVE, ARCHIVED, DRAFT
+  subscriber            Subscriber         @relation(fields: [subscriberId], references: [id], onDelete: Restrict)
+  plan                  SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  paymentTransactions   PaymentTransaction[]
+  usageCounters         UsageCounter[]
+  couponRedemptions     CouponRedemption[]
+  subscriptionEvents    SubscriptionEvent[]
 
-  publishedModels PublishedModel[]
-}
-
-model PublishedModel {
-  id             String       @id @default(uuid())
-  modelVersionId String
-  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
-  payload        Json // The massive flattened JSON metadata snapshot!
-  hash           String // Checksum for integrity
-  createdAt      DateTime     @default(now())
-}
-
-model ApplicationMapping {
-  id                  String            @id @default(uuid())
-  applicationId       String
-  application         Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  subscriptionModelId String
-  subscriptionModel   SubscriptionModel @relation(fields: [subscriptionModelId], references: [id], onDelete: Cascade)
-  isActive            Boolean           @default(true)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-
-  @@unique([applicationId, subscriptionModelId])
-}
-
-model Metadata {
-  id         String   @id @default(uuid())
-  entityType String // System-wide generic key-value store
-  entityId   String
-  key        String
-  value      Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@unique([entityType, entityId, key])
-}
-
-model APIEndpoint {
-  id          String   @id @default(uuid())
-  name        String
-  path        String   @unique
-  method      String
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// ------------------------------------------------------
-// COUPONS & OFFERS & MARKETING
-// ------------------------------------------------------
-
-model Coupon {
-  id            String       @id @default(uuid())
-  code          String       @unique
-  applicationId String?
-  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  affiliateId   String?
-  affiliate     Affiliate?   @relation(fields: [affiliateId], references: [id])
-  campaignId    String?
-  campaign      MarketingCampaign? @relation(fields: [campaignId], references: [id])
-
-  discountType      String    @default("percentage") // percentage, fixed
-  discountValue     Float     @default(0)
-  totalUsageLimit   Int?
-  usesCount         Int       @default(0)
-  perCustomerLimit  Int?
-  isFirstTimeOnly   Boolean   @default(false)
-  expiresAt         DateTime?
-  minDurationMonths Int?
-  applicableProducts Json     @default("[]")
-  applicablePlans   Json      @default("[]") // Array of plan IDs (or Plan Codes)
-  isActive          Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  usages        CouponUsage[]
-  sales         AffiliateSale[]
-}
-
-
-model Offer {
-  id            String       @id @default(uuid())
-  name          String // e.g. "Festival Offer"
-  productId     String?
-  planId        String?
-  plan          Plan?        @relation(fields: [planId], references: [id])
-  durationMonths Int?
-  discountType  String       @default("percentage")
-  discountValue Float        @default(0)
-  perks         Json         @default("[]")
-  banner        String?
-  description   String?
-  applicationId String?
-  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  startDate     DateTime
-  endDate       DateTime
-  status        String       @default("active") // active, inactive
-  isActive      Boolean      @default(true)
-  displayBadge  String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-}
-
-model MarketingCampaign {
-  id          String   @id @default(uuid())
-  name        String
-  platform    String // Facebook, Google Ads, etc.
-  budget      Float    @default(0)
-  spent       Float    @default(0)
-  clicks      Int      @default(0)
-  impressions Int      @default(0)
-  leads       Int      @default(0)
-  installs    Int      @default(0)
-  conversions Int      @default(0)
-  revenue     Float    @default(0)
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  coupons     Coupon[]
-}
-
-// ------------------------------------------------------
-// SUBSCRIPTION SYNCHRONIZATION MODELS
-// ------------------------------------------------------
-
-model SubscriptionReference {
-  id              String      @id @default(uuid())
-  applicationId   String
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  customerId      String // ID from the external application
-  customerEmail   String?
-  customerName    String?
-  planId          String?
-  plan            Plan?       @relation(fields: [planId], references: [id])
-  status          String // TRIAL, ACTIVE, PAST_DUE, PAUSED, CANCELLED, EXPIRED
-  price           Float?
-  durationMonths  Int?
-  endDate         DateTime?
-  basePrice       Decimal? @db.Decimal(12, 2)
-  grossAmount     Decimal? @db.Decimal(12, 2)
-  discountAmount  Decimal? @db.Decimal(12, 2)
-  netAmount       Decimal? @db.Decimal(12, 2)
-  couponCode      String?
-  couponCodeSnapshot String?
-  couponDiscount  Decimal? @db.Decimal(12, 2)
-  promotionName   String?
-  finalPrice      Decimal? @db.Decimal(12, 2)
-  affiliateId     String?
-  affiliate       Affiliate? @relation(fields: [affiliateId], references: [id])
-  featureSnapshot Json? // immutable entitlement snapshot at assignment time
-  limitSnapshot   Json? // immutable limit snapshot at assignment time
-  perks           Json?
-  priceSnapshot   Json?
-  usagePeriodUnit String? // MONTH, YEAR, etc.; independent of subscription duration
-  usagePeriodStart DateTime?
-  usagePeriodEnd  DateTime?
-  billingCycle    String? // MONTHLY, YEARLY
-  startDate       DateTime?
-  nextRenewalDate DateTime?
-  paymentStatus   String? // PAID, FAILED, PENDING
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  events          SubscriptionEvent[]
-  usagePeriods    SubscriptionUsagePeriod[]
-  affiliateSales  AffiliateSale[]
-  featureOverrides SubscriptionFeatureOverride[]
-}
-
-model SubscriptionUsagePeriod {
-  id                      String                @id @default(uuid())
-  subscriptionReferenceId String
-  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id], onDelete: Cascade)
-  limitCode               String
-  periodStart             DateTime
-  periodEnd               DateTime
-  used                    Int                   @default(0)
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-
-  @@unique([subscriptionReferenceId, limitCode, periodStart])
-  @@index([subscriptionReferenceId, periodEnd])
+  @@index([subscriberId, status])
+  @@index([planId])
+  @@index([status])
+  @@index([startsAt])
+  @@map("subscriptions")
 }
 
 model SubscriptionEvent {
-  id                      String                @id @default(uuid())
-  subscriptionReferenceId String
-  subscriptionReference   SubscriptionReference @relation(fields: [subscriptionReferenceId], references: [id], onDelete: Cascade)
-  eventType               String // CREATED, RENEWED, CANCELLED, UPGRADED, DOWNGRADED, PAYMENT_FAILED
-  previousPlanId          String?
-  newPlanId               String?
-  reason                  String?
-  timestamp               DateTime              @default(now())
+  id            String   @id @default(uuid())
+  subscriptionId  String   @map("subscription_id")
+  eventType       String   @map("event_type")
+  effectiveAt     DateTime @map("effective_at")
+  details         Json
+  actorUserId     String?  @map("actor_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([eventType])
+  @@map("subscription_events")
+}
+
+// ============================================
+// USAGE TRACKING
+// ============================================
+
+model UsageCounter {
+  id            String   @id @default(uuid())
+  subscriptionId String   @map("subscription_id")
+  featureId     String   @map("feature_id")
+  periodStart   DateTime @map("period_start")
+  periodEnd     DateTime? @map("period_end")
+  usedValue     BigInt   @default(0) @map("used_value")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  version       Int      @default(1)
+
+  subscription  Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, map: "usage_counters_subscription_fkey")
+  feature       Feature      @relation(fields: [featureId], references: [id], onDelete: Restrict, map: "usage_counters_feature_fkey")
+  subscriber    Subscriber   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, map: "usage_counters_subscriber_fkey")
+  usageEvents   UsageEvent[]
+
+  @@unique([subscriptionId, featureId, periodStart])
+  @@index([subscriptionId])
+  @@index([featureId])
+  @@map("usage_counters")
+}
+
+model UsageEvent {
+  id              String   @id @default(uuid())
+  counterId       String   @map("counter_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  delta           BigInt
+  operation       String
+  metadata        Json     @default("{}")
+  occurredAt      DateTime @default(now()) @map("occurred_at")
+
+  counter         UsageCounter @relation(fields: [counterId], references: [id], onDelete: Cascade)
+
+  @@index([counterId])
+  @@map("usage_events")
+}
+
+// ============================================
+// COUPONS & AFFILIATES
+// ============================================
+
+model Coupon {
+  id                      String       @id @default(uuid())
+  name                    String
+  code                    String       @unique(map: "coupons_code_key")
+  kind                    CouponKind
+  affiliateId             String?      @map("affiliate_id")
+  discountType            DiscountType @map("discount_type")
+  discountValue           Decimal      @db.Decimal(19, 4) @map("discount_value")
+  commissionType          DiscountType? @map("commission_type")
+  commissionValue         Decimal?     @db.Decimal(19, 4) @map("commission_value")
+  commissionCurrency      String?      @db.Char(3) @map("commission_currency")
+  currency                String?      @db.Char(3)
+  startsAt                DateTime     @map("starts_at")
+  endsAt                  DateTime     @map("ends_at")
+  maximumRedemptions      Int          @map("maximum_redemptions")
+  perSubscriberLimit      Int?         @map("per_subscriber_limit")
+  firstSubscriptionOnly   Boolean      @default(false) @map("first_subscription_only")
+  minimumDurationValue    Int?         @map("minimum_duration_value")
+  minimumDurationUnit     DurationUnit? @map("minimum_duration_unit")
+  redemptionCount         Int          @default(0) @map("redemption_count")
+  status                  CouponStatus @default(ACTIVE)
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+  version                 Int          @default(1)
+
+  affiliate               Affiliate?       @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  plans                   CouponPlan[]
+  redemptions             CouponRedemption[]
+  affiliateCommissions    AffiliateCommission[]
+
+  @@index([code])
+  @@index([status])
+  @@index([affiliateId])
+  @@map("coupons")
+}
+
+model CouponPlan {
+  couponId    String @map("coupon_id")
+  planId      String @map("plan_id")
+
+  coupon      Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  plan        SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, planId])
+  @@map("coupon_plans")
+}
+
+model CouponRedemption {
+  id              String   @id @default(uuid())
+  couponId        String   @map("coupon_id")
+  subscriptionId  String   @map("subscription_id")
+  paymentId       String?  @map("payment_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  discountAmount  Decimal  @db.Decimal(19, 4) @map("discount_amount")
+  currency        String   @db.Char(3)
+  redeemedAt      DateTime @default(now()) @map("redeemed_at")
+
+  coupon          Coupon       @relation(fields: [couponId], references: [id], onDelete: Restrict, map: "coupon_redemptions_coupon_fkey")
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict, map: "coupon_redemptions_subscription_fkey")
+  subscriber      Subscriber   @relation(fields: [subscriptionId], references: [id], onDelete: Restrict, map: "coupon_redemptions_subscriber_fkey")
+  payment         PaymentTransaction? @relation(fields: [paymentId], references: [id], onDelete: SetNull, map: "coupon_redemptions_payment_fkey")
+  commissions     AffiliateCommission[]
+
+  @@index([couponId])
+  @@index([subscriptionId])
+  @@map("coupon_redemptions")
+}
+
+model Affiliate {
+  id                    String          @id @default(uuid())
+  companyName           String?         @map("company_name")
+  contactName           String          @map("contact_name")
+  mobileNumber          String?         @map("mobile_number")
+  email                 String          @unique
+  taxRegistrationNumber String?         @map("tax_registration_number")
+  address               Json            @default("{}")
+  notes                 String?
+  status                AffiliateStatus @default(ACTIVE)
+  archivedAt            DateTime?       @map("archived_at")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  version               Int             @default(1)
+
+  coupons               Coupon[]
+  commissions           AffiliateCommission[]
+
+  @@index([email])
+  @@index([status])
+  @@map("affiliates")
+}
+
+model AffiliateCommission {
+  id            String               @id @default(uuid())
+  affiliateId   String               @map("affiliate_id")
+  redemptionId  String?              @map("redemption_id")
+  couponId      String?              @map("coupon_id")
+  entryType     CommissionEntryType  @map("entry_type")
+  amount        Decimal              @db.Decimal(19, 4)
+  currency      String               @db.Char(3)
+  reference     String
+  notes         String?
+  occurredAt    DateTime             @default(now()) @map("occurred_at")
+
+  affiliate     Affiliate            @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  redemption    CouponRedemption?    @relation(fields: [redemptionId], references: [id], onDelete: Restrict)
+  coupon        Coupon?              @relation(fields: [couponId], references: [id], onDelete: Restrict)
+
+  @@unique([reference, entryType])
+  @@index([affiliateId])
+  @@index([occurredAt])
+  @@map("affiliate_commissions")
+}
+
+// ============================================
+// PAYMENTS
+// ============================================
+
+model PaymentTransaction {
+  id                  String         @id @default(uuid())
+  subscriptionId      String         @map("subscription_id")
+  provider            String
+  providerPaymentId   String         @map("provider_payment_id")
+  providerOrderId     String?        @map("provider_order_id")
+  amount              Decimal        @db.Decimal(19, 4)
+  currency            String         @db.Char(3)
+  status              PaymentStatus
+  paidAt              DateTime?      @map("paid_at")
+  metadata            Json           @default("{}")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  subscription        Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  couponRedemptions   CouponRedemption[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payment_transactions")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id                String             @id @default(uuid())
+  title             String
+  message           String
+  deepLink          String?            @map("deep_link")
+  actionMetadata    Json               @default("{}") @map("action_metadata")
+  audienceType      NotificationAudienceType @map("audience_type")
+  status            NotificationStatus @default(DRAFT)
+  scheduledAt       DateTime?          @map("scheduled_at")
+  sentAt            DateTime?          @map("sent_at")
+  createdByUserId   String             @map("created_by_user_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  version           Int                @default(1)
+
+  planAudiences     NotificationPlanAudience[]
+  deliveries        NotificationDelivery[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("notifications")
+}
+
+enum NotificationAudienceType {
+  ALL_SUBSCRIBERS
+  PLANS
+}
+
+model NotificationPlanAudience {
+  notificationId String @map("notification_id")
+  planId         String @map("plan_id")
+
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  plan           SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, planId])
+  @@map("notification_plan_audiences")
+}
+
+model NotificationDelivery {
+  id                String          @id @default(uuid())
+  notificationId    String          @map("notification_id")
+  subscriberId      String          @map("subscriber_id")
+  idempotencyKey    String          @unique @map("idempotency_key")
+  provider          String
+  providerReference String?         @map("provider_reference")
+  status            DeliveryStatus
+  attemptCount      Int             @default(0) @map("attempt_count")
+  lastErrorCode     String?         @map("last_error_code")
+  lastAttemptAt     DateTime?       @map("last_attempt_at")
+  deliveredAt       DateTime?       @map("delivered_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  notification      Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  subscriber        Subscriber      @relation(fields: [subscriberId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, subscriberId])
+  @@index([notificationId])
+  @@index([subscriberId])
+  @@index([status])
+  @@map("notification_deliveries")
+}
+
+// ============================================
+// HEALTH CHECKS
+// ============================================
+
+model HealthCheck {
+  id              String      @id @default(uuid())
+  overallStatus   HealthStatus @map("overall_status")
+  frontendStatus  HealthStatus @map("frontend_status")
+  backendStatus   HealthStatus @map("backend_status")
+  databaseStatus  HealthStatus @map("database_status")
+  latencyMs       Int?        @map("latency_ms")
+  dependencies    Json        @default("{}")
+  incidentSummary String?     @map("incident_summary")
+  checkedAt       DateTime    @default(now()) @map("checked_at")
+
+  @@index([checkedAt])
+  @@map("health_checks")
+}
+
+// ============================================
+// WEBHOOKS (App's own webhook endpoints for external integrations)
+// ============================================
+
+model WebhookEndpoint {
+  id                    String   @id @default(uuid())
+  name                  String
+  url                   String
+  signingSecretReference String  @map("signing_secret_reference")
+  subscribedEvents      Json     @default("[]") @map("subscribed_events")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  version               Int      @default(1)
+
+  deliveries            WebhookDelivery[]
+
+  @@unique([name])
+  @@index([enabled])
+  @@map("webhook_endpoints")
+}
+
+model WebhookEvent {
+  id              String   @id @default(uuid())
+  eventType       String   @map("event_type")
+  aggregateType   String   @map("aggregate_type")
+  aggregateId     String   @map("aggregate_id")
+  payload         Json
+  idempotencyKey  String   @unique @map("idempotency_key")
+  occurredAt      DateTime @map("occurred_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  deliveries      WebhookDelivery[]
+
+  @@index([eventType])
+  @@index([aggregateType, aggregateId])
+  @@index([occurredAt])
+  @@map("webhook_events")
 }
 
 model WebhookDelivery {
-  id             String                @id @default(uuid())
-  eventId        String                @unique
-  applicationId  String
-  application    Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  eventType      String
-  payload        Json
-  status         WebhookDeliveryStatus @default(PENDING)
-  attemptCount   Int                   @default(0)
-  nextAttemptAt  DateTime              @default(now())
-  lastAttemptAt  DateTime?
-  responseStatus Int?
-  failureReason  String?
-  deliveredAt    DateTime?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id                String               @id @default(uuid())
+  eventId           String               @map("event_id")
+  endpointId        String               @map("endpoint_id")
+  status            WebhookDeliveryStatus
+  attemptCount      Int                  @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime?            @map("next_attempt_at")
+  lastAttemptAt     DateTime?            @map("last_attempt_at")
+  deliveredAt       DateTime?            @map("delivered_at")
+  responseStatus    Int?
+  lastErrorCode     String?              @map("last_error_code")
+  leaseToken        String?              @map("lease_token")
+  leaseExpiresAt    DateTime?            @map("lease_expires_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
 
-  @@index([status, nextAttemptAt])
-  @@index([applicationId, createdAt])
+  event             WebhookEvent         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  endpoint          WebhookEndpoint      @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, endpointId])
+  @@index([status, nextAttemptAt, leaseExpiresAt])
+  @@map("webhook_deliveries")
 }
 
-model CouponUsage {
+// ============================================
+// CONTROL CENTRE SYNC (Tracks webhook events received from Control Centre)
+// ============================================
+
+model ControlCentreEvent {
   id              String   @id @default(uuid())
-  couponId        String
-  coupon          Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  customerId      String // ID from the external application
-  applicationId   String
-  discountApplied Float?
-  usedAt          DateTime @default(now())
+  eventType       String   @map("event_type")
+  aggregateType   String   @map("aggregate_type")
+  aggregateId     String   @map("aggregate_id")
+  payload         Json
+  idempotencyKey  String   @unique @map("idempotency_key")
+  receivedAt      DateTime @default(now()) @map("received_at")
+  processedAt     DateTime? @map("processed_at")
+  status          String   @default("pending") // pending, processed, failed
+  errorMessage    String?  @map("error_message")
+
+  @@index([eventType])
+  @@index([aggregateType, aggregateId])
+  @@index([status])
+  @@map("control_centre_events")
 }

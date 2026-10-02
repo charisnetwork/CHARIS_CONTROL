@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 export interface Product {
   id: string;
@@ -7,46 +6,45 @@ export interface Product {
   displayName: string;
   logo?: string;
   apiBaseUrl: string;
+  environment: 'development' | 'staging' | 'production';
+  status: 'active' | 'disabled' | 'archived';
+  version: number | string;
+  frontendUrl?: string;
+  healthPath: string;
+  description?: string;
   customerApi?: string;
   subscriptionApi?: string;
-  environment?: string;
-  version?: string;
-  status?: string;
-  healthApi?: string;
-  description?: string;
-  applicationName?: string;
   couponApi?: string;
   notificationApi?: string;
+  healthApi?: string;
   authenticationMethod?: string;
 }
 
 interface ProductState {
   products: Product[];
   selectedProduct: Product | null;
-  isAllApplications: boolean;
+  isAllApplications: false;
   setProducts: (products: Product[]) => void;
   selectProduct: (productId: string | null) => void;
+  clearProducts: () => void;
 }
 
-export const useProductStore = create<ProductState>()(
-  persist(
-    (set) => ({
-      products: [],
-      selectedProduct: null,
-      isAllApplications: true,
-      
-      setProducts: (products) => set({ products }),
-      
-      selectProduct: (productId) => set((state) => {
-        if (!productId || productId === 'all') {
-          return { selectedProduct: null, isAllApplications: true };
-        }
-        const product = state.products.find(p => p.id === productId) || null;
-        return { selectedProduct: product, isAllApplications: false };
-      }),
-    }),
-    {
-      name: 'charis-product-storage',
-    }
-  )
-);
+export const useProductStore = create<ProductState>((set) => ({
+  products: [],
+  selectedProduct: null,
+  isAllApplications: false,
+  setProducts: (products) =>
+    set((state) => ({
+      products,
+      selectedProduct: state.selectedProduct
+        ? products.find((product) => product.id === state.selectedProduct?.id) ?? null
+        : null,
+    })),
+  selectProduct: (productId) =>
+    set((state) => ({
+      selectedProduct: productId
+        ? state.products.find((product) => product.id === productId) ?? null
+        : null,
+    })),
+  clearProducts: () => set({ products: [], selectedProduct: null }),
+}));

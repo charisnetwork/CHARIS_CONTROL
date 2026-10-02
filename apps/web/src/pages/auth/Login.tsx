@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Server, Lock, Mail, Loader2, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
+import { controlApi, type SessionResponse } from '../../services/controlApi';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,7 +16,7 @@ export default function Login() {
   const token = useAuthStore((state) => state.token);
 
   if (token) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/apps" replace />;
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -24,11 +25,15 @@ export default function Login() {
     setError('');
 
     try {
-      const { data } = await axios.post(`${(import.meta.env.VITE_Control_api_Backend || 'https://chariscontrol-production.up.railway.app').replace(/\/+$/, '')}/api/auth/login`, { email, password });
-      setAuth(data.token, data.user);
-      navigate('/', { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to connect to server');
+      const { data } = await controlApi.post<SessionResponse>('/auth/login', { email, password });
+      setAuth(data.access_token, data.csrf_token, data.user);
+      navigate('/apps', { replace: true });
+    } catch (error: unknown) {
+      setError(
+        axios.isAxiosError(error)
+          ? error.response?.data?.detail ?? 'Failed to connect to server'
+          : 'Failed to connect to server',
+      );
     } finally {
       setLoading(false);
     }

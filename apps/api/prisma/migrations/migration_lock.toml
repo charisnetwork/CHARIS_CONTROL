@@ -1,3 +1,0 @@
-# Prisma migration provider lock. Database changes are reviewed and deployed
-# only through `prisma migrate deploy` against the Control Centre database.
-provider = "postgresql"

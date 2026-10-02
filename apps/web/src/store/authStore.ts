@@ -1,31 +1,34 @@
 import { create } from 'zustand';
 
-interface User {
+export interface ControlUser {
   id: string;
   email: string;
-  role: string;
-  firstName: string;
-  lastName: string;
+  display_name: string;
+  role: 'owner' | 'team_member';
 }
 
 interface AuthState {
   token: string | null;
-  user: User | null;
-  setAuth: (token: string, user: User) => void;
+  csrfToken: string | null;
+  user: ControlUser | null;
+  initialized: boolean;
+  setAuth: (token: string, csrfToken: string, user: ControlUser) => void;
+  markInitialized: () => void;
   logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('cc_token'),
-  user: localStorage.getItem('cc_user') ? JSON.parse(localStorage.getItem('cc_user') as string) : null,
-  setAuth: (token, user) => {
-    localStorage.setItem('cc_token', token);
-    localStorage.setItem('cc_user', JSON.stringify(user));
-    set({ token, user });
+  token: null,
+  csrfToken: sessionStorage.getItem('cc_csrf_token'),
+  user: null,
+  initialized: false,
+  setAuth: (token, csrfToken, user) => {
+    sessionStorage.setItem('cc_csrf_token', csrfToken);
+    set({ token, csrfToken, user, initialized: true });
   },
+  markInitialized: () => set({ initialized: true }),
   logout: () => {
-    localStorage.removeItem('cc_token');
-    localStorage.removeItem('cc_user');
-    set({ token: null, user: null });
+    sessionStorage.removeItem('cc_csrf_token');
+    set({ token: null, csrfToken: null, user: null, initialized: true });
   },
 }));
