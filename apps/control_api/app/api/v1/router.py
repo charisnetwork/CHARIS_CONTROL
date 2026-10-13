@@ -8,9 +8,11 @@ from app.domains.coupons.router import router as coupons_router
 from app.domains.governance.router import router as governance_router
 from app.domains.notifications.router import router as notifications_router
 from app.domains.overview.router import router as overview_router
+from app.domains.payments.router import router as payments_router
 from app.domains.reports.router import router as reports_router
 from app.domains.settings.router import integration_router
 from app.domains.settings.router import router as settings_router
+from app.domains.subscriptions.integration import router as subscription_integration_router
 from app.domains.subscriptions.router import router as subscriptions_router
 
 api_v1_router = APIRouter()
@@ -26,5 +28,7 @@ api_v1_router.include_router(governance_router)
 api_v1_router.include_router(subscriptions_router)
 api_v1_router.include_router(settings_router)
 api_v1_router.include_router(integration_router)
+api_v1_router.include_router(subscription_integration_router)
+api_v1_router.include_router(payments_router)
 
 __all__ = ["api_v1_router"]

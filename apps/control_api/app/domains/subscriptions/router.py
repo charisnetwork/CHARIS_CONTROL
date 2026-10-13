@@ -12,6 +12,8 @@ from app.domains.subscriptions.schemas import (
     SubscriberRead,
     SubscriptionCreate,
     SubscriptionRead,
+    SubscriptionReplaceTerm,
+    SubscriptionTransition,
     UsageConsumeRequest,
     UsageConsumeResponse,
 )
@@ -95,6 +97,44 @@ async def create_subscription(
         correlation_id=_correlation_id(request),
     )
     return SubscriptionRead.model_validate(subscription)
+
+
+@router.post("/subscriptions/{subscription_id}/replace-term", response_model=SubscriptionRead)
+async def replace_subscription_term(
+    subscription_id: uuid.UUID,
+    payload: SubscriptionReplaceTerm,
+    request: Request,
+    authorization: ManageSubscriptions,
+    db: DatabaseSession,
+) -> SubscriptionRead:
+    record = await subscription_service.replace_term(
+        db,
+        application_id=authorization.application_id,
+        subscription_id=subscription_id,
+        principal=authorization.principal,
+        payload=payload,
+        correlation_id=_correlation_id(request),
+    )
+    return SubscriptionRead.model_validate(record)
+
+
+@router.post("/subscriptions/{subscription_id}/transition", response_model=SubscriptionRead)
+async def transition_subscription(
+    subscription_id: uuid.UUID,
+    payload: SubscriptionTransition,
+    request: Request,
+    authorization: ManageSubscriptions,
+    db: DatabaseSession,
+) -> SubscriptionRead:
+    record = await subscription_service.transition(
+        db,
+        application_id=authorization.application_id,
+        subscription_id=subscription_id,
+        principal=authorization.principal,
+        payload=payload,
+        correlation_id=_correlation_id(request),
+    )
+    return SubscriptionRead.model_validate(record)
 
 
 @router.post(

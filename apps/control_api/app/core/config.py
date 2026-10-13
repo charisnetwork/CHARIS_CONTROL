@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -35,6 +35,22 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "charis_refresh"
     csrf_cookie_name: str = "charis_csrf"
     max_request_body_bytes: int = Field(default=2_097_152, ge=65_536, le=10_485_760)
+    razorpay_enabled: bool = False
+    razorpay_mode: Literal["test", "live"] = "test"
+    razorpay_key_id: str = ""
+    razorpay_key_secret: SecretStr = SecretStr("")
+    razorpay_webhook_secret: SecretStr = SecretStr("")
+
+    @model_validator(mode="after")
+    def validate_razorpay(self) -> "Settings":
+        if self.razorpay_enabled:
+            if not self.razorpay_key_id.startswith(f"rzp_{self.razorpay_mode}_"):
+                raise ValueError("Razorpay key must match RAZORPAY_MODE")
+            if not self.razorpay_key_secret.get_secret_value():
+                raise ValueError("RAZORPAY_KEY_SECRET is required")
+            if len(self.razorpay_webhook_secret.get_secret_value()) < 16:
+                raise ValueError("RAZORPAY_WEBHOOK_SECRET must be at least 16 characters")
+        return self
 
     @field_validator("database_url")
     @classmethod

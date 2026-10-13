@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Numeric, Select, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import AuthenticatedUser
@@ -32,6 +32,15 @@ from app.db.models import (
 from app.domains.reports.schemas import ExportReportType, ExportRequest, ReportRange
 
 EXPORT_LIMIT = 10_000
+
+
+def net_payment_amount() -> Any:
+    """Net captured Razorpay value; keep the immutable gross ledger amount."""
+    refunded = cast(PaymentTransaction.metadata_json["amount_refunded_minor"].as_string(), Numeric)
+    return PaymentTransaction.amount - case(
+        (PaymentTransaction.provider == "razorpay", func.coalesce(refunded, 0) / 100),
+        else_=0,
+    )
 
 
 def _in_range(column: Any, value: ReportRange) -> tuple[Any, Any]:
@@ -116,11 +125,13 @@ class ReportService:
                 db,
                 application_id,
                 PaymentTransaction.currency,
-                PaymentTransaction.amount,
+                net_payment_amount(),
                 PaymentTransaction.paid_at,
                 PaymentTransaction,
                 report_range,
-                PaymentTransaction.status == PaymentStatus.SUCCEEDED,
+                PaymentTransaction.status.in_(
+                    [PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED]
+                ),
             ),
             "earned_commission_by_currency": await self._currency_totals(
                 db,

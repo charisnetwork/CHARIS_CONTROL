@@ -307,6 +307,28 @@ export async function listSubscriptions(applicationId: string): Promise<Subscrip
   return data;
 }
 
+export async function transitionSubscription(
+  applicationId: string, subscription: Subscription,
+  action: 'suspend' | 'resume' | 'cancel', reason: string,
+): Promise<Subscription> {
+  const { data } = await controlApi.post<Subscription>(
+    `/apps/${applicationId}/subscriptions/${subscription.id}/transition`,
+    { action, reason, expected_version: subscription.version },
+  );
+  return data;
+}
+
+export async function replaceSubscriptionTerm(
+  applicationId: string, subscription: Subscription,
+  action: 'renew' | 'replace', planId: string, reason: string,
+): Promise<Subscription> {
+  const { data } = await controlApi.post<Subscription>(
+    `/apps/${applicationId}/subscriptions/${subscription.id}/replace-term`,
+    { action, plan_id: planId, reason, expected_version: subscription.version },
+  );
+  return data;
+}
+
 export async function createSubscription(
   applicationId: string,
   payload: {

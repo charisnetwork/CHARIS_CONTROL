@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -34,6 +34,8 @@ from app.domains.entitlements.service import evaluate_entitlement
 from app.domains.subscriptions.schemas import (
     SubscriberCreate,
     SubscriptionCreate,
+    SubscriptionReplaceTerm,
+    SubscriptionTransition,
     UsageConsumeRequest,
 )
 
@@ -76,6 +78,7 @@ def locked_subscription_statement(
             Subscription.application_id == application_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
 
@@ -117,7 +120,231 @@ def _audit(
     )
 
 
+def transition_target(
+    current: SubscriptionStatus, action: str, ends_at: datetime | None, now: datetime
+) -> SubscriptionStatus:
+    allowed = {
+        "suspend": ({SubscriptionStatus.ACTIVE}, SubscriptionStatus.SUSPENDED),
+        "resume": ({SubscriptionStatus.SUSPENDED}, SubscriptionStatus.ACTIVE),
+        "cancel": (
+            {SubscriptionStatus.ACTIVE, SubscriptionStatus.SUSPENDED},
+            SubscriptionStatus.CANCELLED,
+        ),
+    }
+    rule = allowed.get(action)
+    if rule is None or current not in rule[0]:
+        raise HTTPException(status_code=409, detail="Invalid subscription transition")
+    if action != "cancel" and ends_at is not None and ends_at <= now:
+        raise HTTPException(status_code=409, detail="Expired subscriptions require a new term")
+    return rule[1]
+
+
 class SubscriptionService:
+    async def replace_term(
+        self,
+        db: AsyncSession,
+        *,
+        application_id: uuid.UUID,
+        subscription_id: uuid.UUID,
+        principal: AuthenticatedUser,
+        payload: SubscriptionReplaceTerm,
+        correlation_id: str,
+    ) -> Subscription:
+        preliminary = await db.scalar(
+            select(Subscription).where(
+                Subscription.id == subscription_id, Subscription.application_id == application_id
+            )
+        )
+        if preliminary is None:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        await db.scalar(
+            select(Subscriber)
+            .where(
+                Subscriber.id == preliminary.subscriber_id,
+                Subscriber.application_id == application_id,
+            )
+            .with_for_update()
+        )
+        old = await db.scalar(locked_subscription_statement(application_id, subscription_id))
+        if old is None:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        if old.version != payload.expected_version:
+            raise HTTPException(
+                status_code=409, detail="Subscription changed. Refresh before retrying."
+            )
+        now = datetime.now(UTC)
+        if payload.action == "renew":
+            if (
+                old.ends_at is None
+                or old.ends_at > now
+                or old.status == SubscriptionStatus.CANCELLED
+            ):
+                raise HTTPException(
+                    status_code=409, detail="Renewal requires an expired, non-cancelled term"
+                )
+            if payload.plan_id != old.plan_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Renewal uses the same plan; select replacement to change plans",
+                )
+        elif old.status not in {SubscriptionStatus.ACTIVE, SubscriptionStatus.SUSPENDED}:
+            raise HTTPException(
+                status_code=409, detail="Only active or suspended subscriptions can be replaced"
+            )
+        # Do not overwrite a newer term or leave another suspended term resumable.
+        other = await db.scalar(
+            select(Subscription.id).where(
+                Subscription.application_id == application_id,
+                Subscription.subscriber_id == old.subscriber_id,
+                Subscription.id != old.id,
+                Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.SUSPENDED]),
+            )
+        )
+        if other is not None:
+            raise HTTPException(
+                status_code=409, detail="Another current term exists for this subscriber"
+            )
+        old.status = (
+            SubscriptionStatus.EXPIRED
+            if payload.action == "renew"
+            else SubscriptionStatus.CANCELLED
+        )
+        old.auto_renews = False
+        old.version += 1
+        if payload.action == "replace":
+            old.cancelled_at = now
+        await db.flush()
+        new = await self.create_subscription(
+            db,
+            application_id=application_id,
+            principal=principal,
+            payload=SubscriptionCreate(
+                subscriber_id=old.subscriber_id,
+                plan_id=payload.plan_id,
+                starts_at=now,
+                auto_renews=False,
+            ),
+            correlation_id=correlation_id,
+            commit=False,
+        )
+        details: dict[str, object] = {
+            "old_subscription_id": str(old.id),
+            "new_subscription_id": str(new.id),
+            "reason": payload.reason,
+            "action": payload.action,
+            "payment_processed": False,
+        }
+        event_type = f"subscription.{payload.action}"
+        db.add_all(
+            [
+                SubscriptionEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    subscription_id=old.id,
+                    event_type=event_type,
+                    effective_at=now,
+                    details=details,
+                    actor_user_id=principal.user.id,
+                ),
+                WebhookEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    event_type=event_type,
+                    aggregate_type="subscription",
+                    aggregate_id=str(new.id),
+                    payload=details,
+                    occurred_at=now,
+                    idempotency_key=f"subscription.replace-term:{old.id}:{old.version}",
+                ),
+                _audit(
+                    application_id,
+                    principal,
+                    event_type,
+                    "subscription",
+                    old.id,
+                    correlation_id,
+                    details,
+                ),
+            ]
+        )
+        await self._commit_unique(db, "Subscriber already has another current term")
+        await db.refresh(new)
+        return new
+
+    async def transition(
+        self,
+        db: AsyncSession,
+        *,
+        application_id: uuid.UUID,
+        subscription_id: uuid.UUID,
+        principal: AuthenticatedUser,
+        payload: SubscriptionTransition,
+        correlation_id: str,
+    ) -> Subscription:
+        record = await db.scalar(locked_subscription_statement(application_id, subscription_id))
+        if record is None:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        if record.version != payload.expected_version:
+            raise HTTPException(
+                status_code=409, detail="Subscription changed. Refresh before retrying."
+            )
+        now = datetime.now(UTC)
+        target = transition_target(record.status, payload.action, record.ends_at, now)
+        before = record.status.value
+        record.status = target
+        record.version += 1
+        if target == SubscriptionStatus.CANCELLED:
+            record.cancelled_at = now
+            record.auto_renews = False
+        details: dict[str, object] = {
+            "previous_status": before,
+            "status": target.value,
+            "reason": payload.reason,
+            "version": record.version,
+        }
+        event_type = f"subscription.{payload.action}"
+        db.add_all(
+            [
+                SubscriptionEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    subscription_id=record.id,
+                    event_type=event_type,
+                    effective_at=now,
+                    details=details,
+                    actor_user_id=principal.user.id,
+                ),
+                WebhookEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    event_type=event_type,
+                    aggregate_type="subscription",
+                    aggregate_id=str(record.id),
+                    payload={"subscription_id": str(record.id), **details},
+                    idempotency_key=f"subscription.transition:{record.id}:{record.version}",
+                    occurred_at=now,
+                ),
+                _audit(
+                    application_id,
+                    principal,
+                    event_type,
+                    "subscription",
+                    record.id,
+                    correlation_id,
+                    details,
+                ),
+            ]
+        )
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Subscription conflicts with an active plan"
+            ) from exc
+        await db.refresh(record)
+        return record
+
     async def list_subscribers(
         self, db: AsyncSession, *, application_id: uuid.UUID
     ) -> list[Subscriber]:
@@ -181,21 +408,27 @@ class SubscriptionService:
         principal: AuthenticatedUser,
         payload: SubscriptionCreate,
         correlation_id: str,
+        commit: bool = True,
+        initial_status: SubscriptionStatus = SubscriptionStatus.ACTIVE,
     ) -> Subscription:
         subscriber = await db.scalar(
-            select(Subscriber).where(
+            select(Subscriber)
+            .where(
                 Subscriber.id == payload.subscriber_id,
                 Subscriber.application_id == application_id,
             )
+            .with_for_update()
         )
         now = datetime.now(UTC)
         plan = await db.scalar(
-            select(SubscriptionPlan).where(
+            select(SubscriptionPlan)
+            .where(
                 SubscriptionPlan.id == payload.plan_id,
                 SubscriptionPlan.application_id == application_id,
                 SubscriptionPlan.status == PlanStatus.ACTIVE,
-                SubscriptionPlan.effective_at <= now,
+                or_(SubscriptionPlan.effective_at.is_(None), SubscriptionPlan.effective_at <= now),
             )
+            .with_for_update()
         )
         if subscriber is None or plan is None:
             raise HTTPException(
@@ -211,13 +444,13 @@ class SubscriptionService:
             select(Subscription.id).where(
                 Subscription.application_id == application_id,
                 Subscription.subscriber_id == subscriber.id,
-                Subscription.status == SubscriptionStatus.ACTIVE,
+                Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.SUSPENDED]),
             )
         )
-        if existing is not None:
+        if existing is not None and initial_status == SubscriptionStatus.ACTIVE:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Subscriber already has an active subscription",
+                detail="Subscriber already has an active or suspended subscription",
             )
 
         entitlement_rows = (
@@ -252,7 +485,7 @@ class SubscriptionService:
             subscriber_id=subscriber.id,
             plan_id=plan.id,
             external_id=payload.external_id,
-            status=SubscriptionStatus.ACTIVE,
+            status=initial_status,
             starts_at=payload.starts_at,
             ends_at=ends_at,
             auto_renews=payload.auto_renews,
@@ -352,7 +585,10 @@ class SubscriptionService:
                 ),
             ]
         )
-        await self._commit_unique(db, "The active subscription conflicts with an existing record")
+        if commit:
+            await self._commit_unique(
+                db, "The active subscription conflicts with an existing record"
+            )
         return subscription
 
     async def consume_usage(

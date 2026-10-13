@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import (
     AliasChoices,
@@ -72,6 +72,21 @@ class SubscriptionCreate(BaseModel):
         if (self.coupon_code is None) != (self.coupon_idempotency_key is None):
             raise ValueError("coupon_code and coupon_idempotency_key must be supplied together")
         return self
+
+
+class SubscriptionTransition(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    action: Literal["suspend", "resume", "cancel"]
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class SubscriptionReplaceTerm(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    action: Literal["renew", "replace"]
+    plan_id: uuid.UUID
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=5, max_length=500)
 
 
 class SubscriptionRead(BaseModel):

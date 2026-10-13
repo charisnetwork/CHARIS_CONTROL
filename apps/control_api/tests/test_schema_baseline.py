@@ -27,6 +27,12 @@ def load_baseline() -> ModuleType:
 
 def test_baseline_table_and_column_shape_matches_models() -> None:
     baseline = load_baseline()
+    path = Path(__file__).parents[1] / "alembic/versions/20261013_0002_razorpay_checkout.py"
+    specification = importlib.util.spec_from_file_location("razorpay_migration", path)
+    assert specification is not None and specification.loader is not None
+    migration = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(migration)
+    migration.checkout.to_metadata(baseline.metadata)
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

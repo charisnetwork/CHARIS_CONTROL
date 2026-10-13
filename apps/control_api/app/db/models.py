@@ -754,6 +754,44 @@ class PaymentTransaction(IdMixin, ApplicationScopedMixin, TimestampMixin, Base):
     )
 
 
+class RazorpayCheckout(IdMixin, ApplicationScopedMixin, TimestampMixin, Base):
+    __tablename__ = "razorpay_checkouts"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    previous_subscription_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    previous_version: Mapped[int | None] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider_order_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="creating")
+    requested_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("control_users.id", ondelete="RESTRICT"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["subscription_id", "application_id"],
+            ["subscriptions.id", "subscriptions.application_id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["previous_subscription_id", "application_id"],
+            ["subscriptions.id", "subscriptions.application_id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("application_id", "idempotency_key", name="uq_razorpay_checkout_key"),
+        CheckConstraint("amount_minor >= 100", name="razorpay_checkout_minimum"),
+        CheckConstraint(
+            "status IN ('creating', 'ready', 'paid', 'review', 'refunded')",
+            name="razorpay_checkout_status",
+        ),
+        Index("ix_razorpay_checkout_app_created", "application_id", "created_at"),
+    )
+
+
 class CouponRedemption(IdMixin, ApplicationScopedMixin, Base):
     __tablename__ = "coupon_redemptions"
 

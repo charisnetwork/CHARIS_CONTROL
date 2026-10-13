@@ -1,5 +1,76 @@
 # Charis Control Centre working guide
 
+## Razorpay one-time checkout — 2026-10-13
+
+- Added administrator Razorpay checkout in selected-app Subscriptions UI, saved
+  orders/resume and server reconciliation. No Civil self-service checkout yet.
+- Backend-only RAZORPAY_ENABLED (default false), RAZORPAY_MODE, RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET. Production app records reject test
+  mode payments. Never put secrets in Vite variables or ask for them in chat.
+- New frozen migration 20261013_0002_razorpay_checkout adds razorpay_checkouts;
+  existing payment_transactions and pending Subscription snapshots are reused.
+  Run Alembic on Control OS only; no Civil database changes for payments.
+- INR final catalog price only; no coupons/tax invoice/add-ons/proration or
+  recurring debit. Pending snapshots grant nothing and adapter excludes them.
+- Persist quote before external order creation; never blindly repeat ambiguous
+  create failures. Saved-key replay is checked against original request. Order
+  receipts/notes allow signed webhook/reconciliation recovery after a timeout.
+- Callback HMAC plus independent provider fetch; raw webhook HMAC (64KiB limit)
+  plus independent provider fetch. Only exact captured amount/currency/order
+  can activate. Scoped subscriber/checkout locks and globally unique provider
+  references prevent duplicate payment/term activation. Stale term versions
+  record captured cash for review instead of overwriting access.
+- Subscribe payment.captured and refund.processed. Refunds initiated manually
+  in merchant dashboard. Full refund cancels associated paid term; partial flags
+  review and preserves already-active access. Refund totals never regress from
+  stale events. Reports show known net captured Razorpay value using paid_at,
+  not settlement/refund-date accounting. No automatic review override.
+- Both migrations applied fresh to disposable PostgreSQL17; 113 tests passed
+  with 1 unrelated optional live workflow skipped, including 6 actual PostgreSQL
+  payment/lifecycle tests with mocked provider calls (8 simultaneous callbacks,
+  one ledger, tenant/app checks, stale replacement, refunds, timeout, rollback).
+  Backend mypy/lint and frontend lint/build passed; offline migration SQL passed.
+- See RAZORPAY.md. No real merchant/test-mode/browser payment or hosted webhook
+  verified; no push/deployment. Outbox dispatch, Civil customer checkout, paid
+  storage add-ons and automatic billing remain pending. Staging/live config and
+  hosted payment verification are release gates, not inferred from unit tests.
+
+## Manual renewal and replacement — 2026-10-13
+
+- Added POST /apps/{app_id}/subscriptions/{id}/replace-term and Owner UI form.
+  Required action, plan ID, expected version and administrator reason; existing
+  MANAGE_SUBSCRIPTIONS permission and application scoping apply.
+- Renew expired non-cancelled terms on the same currently active catalog plan.
+  Early renewal/scheduling is intentionally rejected. Replacement starts a new
+  full term immediately; no carry-over, credit, proration or payment processing.
+- Old snapshots/dates remain unchanged; old term retired, new snapshots created,
+  and audit/history/outbox written in one transaction. Row/version protection
+  rejects stale repeats. Creation serializes on subscriber and rejects suspended
+  existing terms so ordinary assignment cannot bypass suspension.
+- Catalog changes apply to the new term only. Payment/commission accounting is
+  not fabricated by manual renewal. No migration required. No push/deployment.
+- Full QA regression: 95 passed, one optional live workflow skipped; frontend
+  lint/build passed (bundle-size warning). Real PostgreSQL lifecycle concurrency
+  and hosted/browser workflows still require verification. Payments, storage
+  add-ons, automatic renewal and webhook delivery remain pending.
+
+## Subscription lifecycle — 2026-10-12
+
+- Added app-permission-protected POST subscriptions/{id}/transition: suspend,
+  resume and permanent cancellation. Requires expected_version and a reason.
+- Scoped row lock, incremented version, audit/event/outbox writes in one commit;
+  stale/duplicate attempts return 409. Existing plan/entitlement snapshots retained.
+- Expired/cancelled terms cannot resume; cancellation disables auto_renews.
+- Owner UI actions added. Webhook dispatch is not implemented; Civil polls its
+  authenticated subscription contract with up-to-60-second cache.
+- Renewal, transactional plan replacement, verified payments and storage add-on
+  checkout remain pending. Do not claim these lifecycle actions transfer money.
+- No schema change. Not pushed or deployed; real database concurrency and hosted
+  browser verification of lifecycle controls remain pending.
+- Verification: 13 lifecycle/locking unit tests passed; frontend lint/build passed
+  (bundle-size warning remains). Full backend suite stalled at existing Civil
+  integration tests and was interrupted; do not report a full regression pass.
+
 ## Boundaries
 
 - Control Centre and Bill Easy are separate repositories and PostgreSQL databases.
@@ -34,6 +105,9 @@
 - The eventual downstream entitlement token remains application- and tenant-scoped and deny-by-default. SDK cache keys use `applicationId:tenantId`.
 
 ## Recent work
+
+- Added first Civil adapter phase: app-key-authenticated read-only `/api/v1/integrations/apps/{app_id}/tenants/{external_id}/subscription` and `/subscription-catalog`. Snapshots are application/tenant scoped, evaluate expiry/suspension, expose immutable entitlement grants and only visible active storefront plans. No new tables or direct Civil database access. Civil Company.id maps to subscriber.external_id; initial subscriber/plan assignment stays in existing OS admin UI. Checkout is explicitly disabled; payment activation, active-plan replacement/renewal and webhook delivery are not completed by this phase.
+- Civil enforces entitlements and lifetime photo/storage quotas in its own backend. See `/home/pachu/Documents/charis_civil/CHARIS_OS_INTEGRATION.md`. Both repositories require coordinated deployment; changes are local and not pushed. OS full suite passed 75 with one optional live workflow skipped under explicit QA settings; live cross-service/browser verification remains pending.
 
 - Read and reconciled the complete DPR against the repository before implementation.
 - Inventoried reusable Express concepts: product adapter boundary, outbound URL validation, dynamic feature catalogs, immutable commercial/entitlement snapshots, atomic coupon usage, signed entitlements, event outbox, public catalog, commissions, and app health.
