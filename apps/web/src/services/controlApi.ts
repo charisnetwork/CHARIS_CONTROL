@@ -22,6 +22,17 @@ controlApi.interceptors.request.use((config) => {
   return config;
 });
 
+// Access tokens last 15 minutes: on a 401, renew once through the refresh cookie and retry.
+controlApi.interceptors.response.use(undefined, async (error) => {
+  const original = error?.config as (typeof error.config & { _retried?: boolean }) | undefined;
+  if (error?.response?.status !== 401 || !original || original._retried || String(original.url).includes('/auth/')) {
+    throw error;
+  }
+  original._retried = true;
+  if (!(await restoreSession())) throw error;
+  return controlApi(original);
+});
+
 export interface SessionResponse {
   access_token: string;
   token_type: 'bearer';
@@ -94,7 +105,16 @@ const mapApplication = (application: ApplicationResponse): Product => ({
   version: application.version,
 });
 
-export async function restoreSession(): Promise<boolean> {
+// Refresh tokens rotate on use, so concurrent restores (React StrictMode, several
+// mounts) must share one request or the second would present a spent token.
+let restoring: Promise<boolean> | null = null;
+
+export function restoreSession(): Promise<boolean> {
+  restoring ??= restoreSessionOnce().finally(() => { restoring = null; });
+  return restoring;
+}
+
+async function restoreSessionOnce(): Promise<boolean> {
   const csrfToken = useAuthStore.getState().csrfToken;
   if (!csrfToken) {
     useAuthStore.getState().markInitialized();
