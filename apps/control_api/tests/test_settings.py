@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
 from app.api.dependencies import integration_credential_statement
+from app.domains.settings.router import _plan_ui_read
 from app.domains.settings.schemas import (
     ApplicationSettingsUpdate,
     HealthReportCreate,
@@ -58,3 +60,22 @@ def test_storefront_rejects_duplicate_plan_order() -> None:
                 {"plan_id": uuid.uuid4(), "display_order": 0},
             ]
         )
+
+
+def test_storefront_response_projects_only_public_fields() -> None:
+    app_id = uuid.uuid4()
+    row = SimpleNamespace(
+        id=uuid.uuid4(),
+        application_id=app_id,
+        version=1,
+        recommended_plan_id=None,
+        show_feature_comparison=True,
+        show_billing_period_selector=True,
+        display_labels={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        _sa_instance_state=object(),
+    )
+    result = _plan_ui_read(app_id, row, [])
+    assert result.application_id == app_id
+    assert "_sa_instance_state" not in result.model_dump()

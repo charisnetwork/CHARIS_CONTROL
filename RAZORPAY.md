@@ -1,8 +1,18 @@
 # Razorpay checkout — Charis OS
 
-This is an administrator-operated, one-time plan-term checkout in the selected
-application's Subscriptions page. It is not Razorpay recurring Subscriptions or
-automatic renewal. Civil customer self-service checkout is not wired yet.
+Customer self-service checkout is now wired inside Civil through tenant-scoped,
+app-key-authenticated OS adapter routes. OS still owns payment verification,
+ledger and entitlement activation; the customer never signs into OS. Existing
+administrator checkout remains a support tool. These are one-time plan-term
+payments, not Razorpay recurring Subscriptions or automatic renewal.
+Apply migration20261020_0003 after20261013_0002. See
+../charis_civil/SUBSCRIPTION_ARCHITECTURE.md for the corrected ownership contract.
+Real provider/browser payment testing still requires configured merchant test keys.
+
+Since 2026-10-20 the customer adapter also supports **coupons/partner codes**, a read-only
+**quote**, and **free (₹0) plans**. Bill Easy (`../bill easy/CHARIS_OS_INTEGRATION.md`) and Civil
+both use it. All apps share one Razorpay account; every order, payment, coupon and commission is
+recorded against its application, so finances stay separate per app.
 
 ## Deploy safely
 
@@ -62,9 +72,25 @@ All routes below use `/api/v1`:
 
 - INR plans only, INR 1–10,00,000, at most two decimal places. The **server** reads
   the catalog price; clients cannot submit the amount/currency/entitlements.
-- Catalog face price is the final charge. Tax calculation/GST invoices, coupons,
-  storage add-ons, mid-term proration and carry-over credits are **not** supported
-  in this checkout. Configure appropriate final prices before live enablement.
+- Catalog price minus an optional app-scoped coupon is the final charge. The coupon
+  is validated with the same rules as admin assignment (status/window, plan scope,
+  limits, first-subscription, per-subscriber) and must leave at least INR 1. Tax/GST
+  invoices, storage add-ons, mid-term proration and carry-over credits are **not**
+  supported. Configure appropriate final prices before live enablement.
+- `POST .../checkout/quote` {plan_id, coupon_code?} prices a plan with the real rules
+  inside a rolled-back transaction: nothing is saved, no redemption is reserved.
+- Creating an order **reserves** the coupon redemption. Affiliate commission is earned
+  only when the payment is verified (once, even with concurrent callbacks) and a full
+  refund adds an equal negative adjustment. Abandoned orders never earn commission;
+  their reserved redemption is not released automatically yet.
+- A visible plan priced INR 0 activates immediately through `.../checkout/orders`
+  without Razorpay, only when the customer has no current active/suspended term
+  (lapsed terms are marked expired first). Coupons do not apply to free plans.
+  The order key must include the coupon: the same key with a different coupon is 409.
+- Unpaid orders older than 24 hours become `expired` (migration 20261020_0004) when the
+  customer starts a new order, or via the daily `python -m app.cli expire-checkouts`: the
+  pending term is cancelled and the coupon reservation released. A payment that still
+  arrives for an expired order is recorded and set to `review`, never lost or auto-activated.
 - Create an immutable pending subscription snapshot before creating the provider
   order. Pending terms are excluded from the Civil entitlement adapter.
 - Activation requires fetched payment captured=true, captured/refunded status,

@@ -11,6 +11,7 @@ from app.domains.affiliates.schemas import (
     AffiliateCreate,
     AffiliateRead,
     AffiliateStatusUpdate,
+    AffiliateUpdate,
     CommissionCurrencySummary,
     CommissionEntryCreate,
     CommissionEntryRead,
@@ -51,6 +52,25 @@ async def create_affiliate(
         application_id=authorization.application_id,
         principal=authorization.principal,
         payload=payload,
+        correlation_id=_correlation_id(request),
+    )
+    return AffiliateRead.model_validate(row)
+
+
+@router.patch("/{affiliate_id}", response_model=AffiliateRead)
+async def update_affiliate(
+    affiliate_id: uuid.UUID,
+    payload: AffiliateUpdate,
+    request: Request,
+    authorization: ManageAffiliates,
+    db: DatabaseSession,
+) -> AffiliateRead:
+    row = await affiliate_service.update_profile(
+        db,
+        application_id=authorization.application_id,
+        affiliate_id=affiliate_id,
+        changes=payload.model_dump(exclude_unset=True),
+        principal=authorization.principal,
         correlation_id=_correlation_id(request),
     )
     return AffiliateRead.model_validate(row)

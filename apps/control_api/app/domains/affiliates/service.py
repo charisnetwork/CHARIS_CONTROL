@@ -139,6 +139,51 @@ class AffiliateService:
         await db.commit()
         return affiliate
 
+    async def update_profile(
+        self,
+        db: AsyncSession,
+        *,
+        application_id: uuid.UUID,
+        affiliate_id: uuid.UUID,
+        changes: dict[str, object],
+        principal: AuthenticatedUser,
+        correlation_id: str,
+    ) -> Affiliate:
+        affiliate = await db.scalar(
+            select(Affiliate)
+            .where(Affiliate.application_id == application_id, Affiliate.id == affiliate_id)
+            .with_for_update()
+        )
+        if affiliate is None:
+            raise HTTPException(status_code=404, detail="Affiliate not found")
+        for field in ("contact_name", "email"):
+            if field in changes and changes[field] is None:
+                raise HTTPException(status_code=422, detail=f"{field} cannot be empty")
+        if "address" in changes and changes["address"] is None:
+            changes["address"] = {}
+        for field, value in changes.items():
+            setattr(affiliate, field, value)
+        affiliate.version += 1
+        db.add(
+            _audit(
+                application_id,
+                principal,
+                "affiliate.updated",
+                affiliate.id,
+                correlation_id,
+                {"changed": sorted(changes)},
+            )
+        )
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Another partner already uses these details"
+            ) from exc
+        await db.refresh(affiliate)
+        return affiliate
+
     async def list_commissions(
         self,
         db: AsyncSession,

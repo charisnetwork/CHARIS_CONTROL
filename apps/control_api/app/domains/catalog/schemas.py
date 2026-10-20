@@ -153,6 +153,32 @@ class PlanCreate(BaseModel):
         return self
 
 
+class PlanUpdate(BaseModel):
+    """Partial plan edit. Existing subscriptions keep their frozen price and entitlements."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=4000)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=19, decimal_places=4)
+    duration_value: int | None = Field(default=None, gt=0, le=1200)
+    duration_unit: DurationUnit | None = None
+    coupons_allowed: bool | None = None
+    user_limit: int | None = Field(default=None, gt=0)
+    user_limit_unlimited: bool | None = None
+    status: PlanStatus | None = None
+    effective_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> Self:
+        if self.effective_at is not None and self.effective_at.tzinfo is None:
+            raise ValueError("effective_at must include a timezone")
+        if self.user_limit is not None and self.user_limit_unlimited:
+            raise ValueError("define either a limited user_limit or user_limit_unlimited")
+        return self
+
+
 class PlanRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -198,4 +224,5 @@ __all__ = [
     "FeatureRead",
     "PlanCreate",
     "PlanRead",
+    "PlanUpdate",
 ]

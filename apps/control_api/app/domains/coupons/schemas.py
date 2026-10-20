@@ -94,6 +94,35 @@ class CouponCreate(BaseModel):
         return self
 
 
+class CouponUpdate(BaseModel):
+    """Partial coupon edit. Discount/commission values are fixed once a coupon is redeemed."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    status: CouponStatus | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    maximum_redemptions: int | None = Field(default=None, gt=0)
+    per_subscriber_limit: int | None = Field(default=None, gt=0)
+    first_subscription_only: bool | None = None
+    discount_value: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
+    commission_value: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
+    plan_ids: list[uuid.UUID] | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> Self:
+        for value in (self.starts_at, self.ends_at):
+            if value is not None and value.tzinfo is None:
+                raise ValueError("starts_at and ends_at must include a timezone")
+        if self.status in {CouponStatus.SCHEDULED, CouponStatus.EXPIRED}:
+            raise ValueError("status can be set to active or disabled")
+        if self.plan_ids is not None and len(self.plan_ids) != len(set(self.plan_ids)):
+            raise ValueError("plan_ids must not contain duplicates")
+        return self
+
+
 class CouponRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,10 +147,11 @@ class CouponRead(BaseModel):
     minimum_duration_unit: DurationUnit | None
     redemption_count: int
     status: CouponStatus
+    version: int
     plan_ids: list[uuid.UUID] = Field(default_factory=list)
     version: int
     created_at: datetime
     updated_at: datetime
 
 
-__all__ = ["CouponCreate", "CouponRead"]
+__all__ = ["CouponCreate", "CouponRead", "CouponUpdate"]

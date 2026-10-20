@@ -237,6 +237,32 @@ export async function createPlan(
   return data;
 }
 
+export interface UpdatePlanPayload {
+  expected_version: number;
+  name?: string;
+  description?: string | null;
+  price?: string;
+  duration_value?: number;
+  duration_unit?: 'day' | 'month' | 'year';
+  coupons_allowed?: boolean;
+  status?: 'draft' | 'active' | 'archived';
+  effective_at?: string;
+}
+
+export async function updatePlan(applicationId: string, planId: string, payload: UpdatePlanPayload): Promise<SubscriptionPlan> {
+  const { data } = await controlApi.patch<SubscriptionPlan>(`/apps/${applicationId}/plans/${planId}`, payload);
+  return data;
+}
+
+export async function replacePlanEntitlements(applicationId: string, planId: string, entitlements: EntitlementPayload[]): Promise<SubscriptionPlan> {
+  const { data } = await controlApi.put<SubscriptionPlan>(`/apps/${applicationId}/plans/${planId}/entitlements`, { entitlements });
+  return data;
+}
+
+export async function deletePlan(applicationId: string, planId: string): Promise<void> {
+  await controlApi.delete(`/apps/${applicationId}/plans/${planId}`);
+}
+
 export interface Subscriber {
   id: string;
   application_id: string;
@@ -371,6 +397,7 @@ export interface Coupon {
   redemption_count: number;
   status: 'active' | 'scheduled' | 'expired' | 'disabled';
   plan_ids: string[];
+  version: number;
 }
 
 export interface CreateCouponPayload {
@@ -393,6 +420,29 @@ export interface CreateCouponPayload {
   minimum_duration_unit?: 'day' | 'month' | 'year';
   status: 'active' | 'scheduled';
   plan_ids: string[];
+}
+
+export interface UpdateCouponPayload {
+  expected_version: number;
+  name?: string;
+  status?: 'active' | 'disabled';
+  starts_at?: string;
+  ends_at?: string;
+  maximum_redemptions?: number;
+  per_subscriber_limit?: number;
+  first_subscription_only?: boolean;
+  discount_value?: string;
+  commission_value?: string;
+  plan_ids?: string[];
+}
+
+export async function updateCoupon(applicationId: string, couponId: string, payload: UpdateCouponPayload): Promise<Coupon> {
+  const { data } = await controlApi.patch<Coupon>(`/apps/${applicationId}/coupons/${couponId}`, payload);
+  return data;
+}
+
+export async function deleteCoupon(applicationId: string, couponId: string): Promise<void> {
+  await controlApi.delete(`/apps/${applicationId}/coupons/${couponId}`);
 }
 
 export async function listCoupons(applicationId: string): Promise<Coupon[]> {
@@ -458,6 +508,23 @@ export async function createAffiliate(
     address: {},
   });
   return data;
+}
+
+export async function updateAffiliate(
+  applicationId: string,
+  affiliateId: string,
+  payload: Partial<Pick<Affiliate, 'contact_name' | 'company_name' | 'email' | 'mobile_number' | 'notes'>>,
+): Promise<Affiliate> {
+  const { data } = await controlApi.patch<Affiliate>(`/apps/${applicationId}/affiliates/${affiliateId}`, payload);
+  return data;
+}
+
+/** The server's validation message, for showing why an action was refused. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && typeof detail[0]?.msg === 'string') return detail[0].msg.replace(/^Value error, /, '');
+  return fallback;
 }
 
 export async function updateAffiliateStatus(

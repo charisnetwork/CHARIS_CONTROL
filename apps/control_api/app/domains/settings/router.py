@@ -50,7 +50,11 @@ def _plan_ui_read(
         return PlanUiSettingsRead(application_id=application_id)
     return PlanUiSettingsRead.model_validate(
         {
-            **config.__dict__,
+            **{
+                key: getattr(config, key)
+                for key in PlanUiSettingsRead.model_fields
+                if key != "items"
+            },
             "items": [PlanUiItemInput.model_validate(item, from_attributes=True) for item in items],
         }
     )

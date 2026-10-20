@@ -3,11 +3,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.api.dependencies import AppAuthorization, DatabaseSession, require_app_permission
 from app.db.models import AppPermission
-from app.domains.coupons.schemas import CouponCreate, CouponRead
+from app.domains.coupons.schemas import CouponCreate, CouponRead, CouponUpdate
 from app.domains.coupons.service import coupon_service
 
 router = APIRouter(prefix="/apps/{app_id}/coupons", tags=["coupons"])
@@ -45,6 +45,42 @@ async def create_coupon(
         correlation_id=correlation_id,
     )
     return _read(coupon, plan_ids)
+
+
+@router.patch("/{coupon_id}", response_model=CouponRead)
+async def update_coupon(
+    coupon_id: uuid.UUID,
+    payload: CouponUpdate,
+    request: Request,
+    authorization: ManageCoupons,
+    db: DatabaseSession,
+) -> CouponRead:
+    coupon, plan_ids = await coupon_service.update_coupon(
+        db,
+        application_id=authorization.application_id,
+        coupon_id=coupon_id,
+        principal=authorization.principal,
+        payload=payload,
+        correlation_id=getattr(request.state, "correlation_id", str(uuid.uuid4())),
+    )
+    return _read(coupon, plan_ids)
+
+
+@router.delete("/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_coupon(
+    coupon_id: uuid.UUID,
+    request: Request,
+    authorization: ManageCoupons,
+    db: DatabaseSession,
+) -> Response:
+    await coupon_service.delete_coupon(
+        db,
+        application_id=authorization.application_id,
+        coupon_id=coupon_id,
+        principal=authorization.principal,
+        correlation_id=getattr(request.state, "correlation_id", str(uuid.uuid4())),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 __all__ = ["router"]

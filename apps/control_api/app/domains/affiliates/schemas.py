@@ -41,6 +41,20 @@ class AffiliateRead(BaseModel):
     updated_at: datetime
 
 
+class AffiliateUpdate(BaseModel):
+    """Partial partner profile edit; use the status endpoint to disable or archive."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    company_name: str | None = Field(default=None, max_length=200)
+    contact_name: str | None = Field(default=None, min_length=2, max_length=160)
+    mobile_number: str | None = Field(default=None, max_length=32)
+    email: EmailStr | None = None
+    tax_registration_number: str | None = Field(default=None, max_length=64)
+    address: dict[str, Any] | None = None
+    notes: str | None = Field(default=None, max_length=4000)
+
+
 class AffiliateStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: AffiliateStatus
@@ -101,6 +115,7 @@ __all__ = [
     "AffiliateCreate",
     "AffiliateRead",
     "AffiliateStatusUpdate",
+    "AffiliateUpdate",
     "CommissionCurrencySummary",
     "CommissionEntryCreate",
     "CommissionEntryRead",

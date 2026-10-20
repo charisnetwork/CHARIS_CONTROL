@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import AuthenticatedUser
 from app.db.models import (
+    AffiliateCommission,
     Application,
     ApplicationEnvironment,
     ApplicationStatus,
     AuditLog,
+    Coupon,
+    CouponRedemption,
     DurationUnit,
     PaymentStatus,
     PaymentTransaction,
@@ -23,6 +26,7 @@ from app.db.models import (
     SubscriptionStatus,
     WebhookEvent,
 )
+from app.domains.coupons.service import coupon_service
 from app.domains.payments import gateway
 from app.domains.payments.schemas import CheckoutCreate, ProviderOrder, ProviderPayment
 from app.domains.subscriptions.schemas import SubscriptionCreate
@@ -81,14 +85,106 @@ def checkout_view(record: RazorpayCheckout) -> dict[str, object]:
     }
 
 
+CHECKOUT_EXPIRY = timedelta(hours=24)
+
+
+async def expire_stale_checkouts(
+    db: AsyncSession,
+    *,
+    application_id: uuid.UUID | None = None,
+    subscriber_id: uuid.UUID | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Expire unpaid orders older than 24h: cancel the pending term, release its coupon.
+
+    A payment that still arrives later is recorded and flagged for review, never lost.
+    The caller commits.
+    """
+    now = now or datetime.now(UTC)
+    statement = (
+        select(RazorpayCheckout, Subscription)
+        .join(
+            Subscription,
+            (Subscription.id == RazorpayCheckout.subscription_id)
+            & (Subscription.application_id == RazorpayCheckout.application_id),
+        )
+        .where(
+            RazorpayCheckout.status.in_(["creating", "ready"]),
+            RazorpayCheckout.provider_payment_id.is_(None),
+            RazorpayCheckout.created_at < now - CHECKOUT_EXPIRY,
+        )
+        .with_for_update(of=RazorpayCheckout)
+    )
+    if application_id is not None:
+        statement = statement.where(RazorpayCheckout.application_id == application_id)
+    if subscriber_id is not None:
+        statement = statement.where(Subscription.subscriber_id == subscriber_id)
+    expired = 0
+    for checkout, pending in (await db.execute(statement)).all():
+        checkout.status = "expired"
+        if pending.status == SubscriptionStatus.PENDING:
+            pending.status = SubscriptionStatus.CANCELLED
+            pending.cancelled_at = now
+            pending.version += 1
+        redemption = await db.scalar(
+            select(CouponRedemption).where(
+                CouponRedemption.application_id == checkout.application_id,
+                CouponRedemption.subscription_id == pending.id,
+            )
+        )
+        earned = (
+            await db.scalar(
+                select(AffiliateCommission.id).where(
+                    AffiliateCommission.application_id == checkout.application_id,
+                    AffiliateCommission.redemption_id == redemption.id,
+                )
+            )
+            if redemption is not None
+            else None
+        )
+        if redemption is not None and earned is None:
+            coupon = await db.scalar(
+                select(Coupon)
+                .where(
+                    Coupon.application_id == checkout.application_id,
+                    Coupon.id == redemption.coupon_id,
+                )
+                .with_for_update()
+            )
+            if coupon is not None and coupon.redemption_count > 0:
+                coupon.redemption_count -= 1
+                coupon.version += 1
+            await db.delete(redemption)
+        db.add(
+            AuditLog(
+                application_id=checkout.application_id,
+                actor_user_id=None,
+                action="payment.expired",
+                entity_type="razorpay_checkout",
+                entity_id=str(checkout.id),
+                correlation_id=str(checkout.id),
+                after_summary={
+                    "subscription_id": str(pending.id),
+                    "coupon_released": redemption is not None and earned is None,
+                },
+            )
+        )
+        expired += 1
+    await db.flush()
+    return expired
+
+
 async def start_checkout(
     db: AsyncSession,
     *,
     application_id: uuid.UUID,
-    principal: AuthenticatedUser,
+    principal: AuthenticatedUser | None,
     payload: CheckoutCreate,
     correlation_id: str,
+    external_actor_id: str | None = None,
 ) -> RazorpayCheckout:
+    if principal is None and not external_actor_id:
+        raise HTTPException(status_code=403, detail="Checkout actor is required")
     settings = gateway.payment_settings()
     application = await db.get(Application, application_id)
     if application is None or application.status != ApplicationStatus.ACTIVE:
@@ -136,11 +232,32 @@ async def start_checkout(
             or existing.previous_subscription_id != payload.previous_subscription_id
             or existing.previous_version != payload.previous_version
             or existing.reason != payload.reason
+            or quoted.commercial_snapshot.get("coupon_code") != payload.coupon_code
         ):
             raise HTTPException(
                 status_code=409, detail="Checkout key belongs to a different request"
             )
         return existing
+    await expire_stale_checkouts(db, application_id=application_id, subscriber_id=subscriber.id)
+    if external_actor_id is not None:
+        pending_order = await db.scalar(
+            select(RazorpayCheckout.id)
+            .join(
+                Subscription,
+                (Subscription.id == RazorpayCheckout.subscription_id)
+                & (Subscription.application_id == RazorpayCheckout.application_id),
+            )
+            .where(
+                RazorpayCheckout.application_id == application_id,
+                Subscription.subscriber_id == subscriber.id,
+                RazorpayCheckout.status.in_(["creating", "ready"]),
+            )
+        )
+        if pending_order is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Resume your existing checkout before starting another payment",
+            )
     current = list(
         (
             await db.scalars(
@@ -194,6 +311,10 @@ async def start_checkout(
             plan_id=payload.plan_id,
             starts_at=datetime.now(UTC),
             auto_renews=False,
+            coupon_code=payload.coupon_code,
+            coupon_idempotency_key=(
+                f"checkout:{payload.idempotency_key}" if payload.coupon_code else None
+            ),
         ),
         correlation_id=correlation_id,
         commit=False,
@@ -211,7 +332,8 @@ async def start_checkout(
         ),
         currency="INR",
         status="creating",
-        requested_by=principal.user.id,
+        requested_by=principal.user.id if principal else None,
+        external_actor_id=external_actor_id,
         reason=payload.reason,
     )
     db.add(checkout)
@@ -350,6 +472,10 @@ async def settle_payment(
             else PaymentStatus.PARTIALLY_REFUNDED
         )
         checkout.status = "refunded" if refunded == payment.amount else "review"
+        if refunded == payment.amount:
+            await coupon_service.settle_checkout_commission(
+                db, subscription=subscription, now=now, refunded=True
+            )
         if refunded == payment.amount and subscription.status in {
             SubscriptionStatus.PENDING,
             SubscriptionStatus.ACTIVE,
@@ -424,6 +550,9 @@ async def settle_payment(
             subscription.status = SubscriptionStatus.ACTIVE
             subscription.version += 1
             checkout.status = "paid"
+            await coupon_service.settle_checkout_commission(
+                db, subscription=subscription, now=now, refunded=False
+            )
     if prior_status != checkout.status or refunded != previous_refunded:
         details = {
             "checkout_id": str(checkout.id),
@@ -432,6 +561,7 @@ async def settle_payment(
             "payment_id": payment.id,
             "reason": checkout.reason,
             "amount_refunded_minor": refunded,
+            "external_actor_id": getattr(checkout, "external_actor_id", None),
         }
         event_type = f"payment.{checkout.status}"
         db.add_all(

@@ -1,5 +1,95 @@
 # Charis Control Centre working guide
 
+## Bill Easy connected; coupons + free plans in customer checkout — 2026-10-20
+
+- Owner model confirmed: OS creates/edits plans, coupons, affiliates, notifications per app;
+  apps keep their data and enforce entitlements. One shared Razorpay account, all records
+  app-scoped. Affiliates/coupons stay per app (not company-wide).
+- Customer adapter: optional `coupon_code` on orders, read-only `POST .../checkout/quote`,
+  free (₹0) plan activation without payment for customers without a current term. Coupon
+  redemption is reserved at order time; commission is earned on verified capture and
+  reversed on full refund (`coupon_service.settle_checkout_commission`). Catalog now sends
+  `recommended`. No migration. See RAZORPAY.md.
+- Bill Easy (`../bill easy`) now has `CHARIS_SUBSCRIPTION_MODE=enforce` (default off =
+  unchanged): OS snapshot/catalog/checkout client, deny-by-default features and invoice/
+  product/business limits, owner's first business = OS customer, OS plan page, legacy SDK
+  and local Razorpay webhook disabled, local unverified `/subscription/upgrade` closed.
+  Fixed `/control/customers` 500 (missing createdAt attribute). See its
+  CHARIS_OS_INTEGRATION.md and `npm run charis-os:sync` go-live script.
+- Civil checkout UI/proxy accept coupon codes, quote and free plans.
+- Verified: OS 122 passed/1 skipped (incl. real-PG coupon/commission/refund and free-plan
+  concurrency tests; run from outside the repo so local .env is not read); Ruff/mypy;
+  Civil 45 tests, types, lint, build; Bill Easy 4 unit tests + frontend build. Live local
+  runs: Bill Easy↔OS 18 checks (signup→Free, limits, coupons, paid Premium, ₹67.35
+  commission, 3-business limit, suspend), Bill Easy default mode 6 checks, Civil paid coupon
+  3 checks, Civil regression 25 checks. Payments used an in-memory Razorpay stand-in
+  (scratch QA harness patching only gateway.provider_request); no real Razorpay or browser
+  payment was made. No push/deploy.
+- Follow-up same day: PATCH/DELETE plans (delete only if never used, else archive; archived
+  hidden from storefront), PATCH/DELETE coupons (discount/commission fixed after first use;
+  used coupons only disable), PATCH affiliate profile; OS UI edit/archive/delete, partner
+  coupon creation and plan duration unit. Unpaid checkouts expire after 24h (migration
+  20261020_0004, `app.cli expire-checkouts`). Fixed stray `>` that made railway.toml invalid.
+  OS 124 passed/1 skipped; web tsc/eslint/build; live edit suite 8 + all earlier live suites
+  re-passed. Hosting steps: HOSTING_CHECKLIST.md. No push/deploy.
+- Still open: outbox dispatch (apps poll ≤60s), OS dashboard/customers reading app summary APIs.
+
+## Independent-app customer checkout correction — 2026-10-20
+
+- Continuation: fixed customer checkout selecting a cancelled term as required
+  replacement. Cancelled customers can repurchase; old grants stay cancelled until
+  a new captured payment verifies. Added regression to real-PG customer scenario.
+  Rechecked120 passed/1 optional skipped,20 live Civil adapter checks, Ruff/mypy and
+  OS UI lint/build. QA backend restarted; provider transport remains mocked in
+  tests and real merchant payments remain disabled. No push/deploy.
+
+- Human clarified CHARIS AI Technologies LLP owns the platform, Civil is an
+  independent customer-facing app, and OS is its model/payment/entitlement provider,
+  platform revenue/customer/partner controller. Normal customer purchases happen
+  in Civil and activate automatically after verification, not OS manual assignment.
+- Added app-key tenant checkout/order/verify adapter; strict published-plan and
+  tenant ownership checks reuse existing captured-payment settlement. No browser
+  secrets or fake OS administrator login. Customer orders serialize on subscriber;
+  same-key retry reuses quote; another pending order must first be resolved.
+- OS-only migration20261020_0003 adds external_actor_id and nullable requested_by,
+  actor check. Customer attribution remains distinct from OS user. Existing actor
+  references preserved; destructive downgrade refuses customer-attributed records.
+- Catalog now exposes per-plan grants for Civil comparisons. OS UI explicitly says
+  manual assignment is an internal unpaid support override, not normal checkout.
+- 120 tests passed/1 optional workflow skipped, including real isolated PostgreSQL
+  with mocked provider HTTP: automatic customer activation, pending-no-grant,
+  concurrency/replay/signature/ownership and ledger.20 live Civil→OS disabled-provider
+  checks passed; Ruff/mypy and Civil build/lint/type verify passed. Fresh3 migrations
+  rehearsed. Provider/browser payments still require actual test keys + reachable
+  webhook; no real payment made, no push/deploy. QA servers left running.
+- ../charis_civil/SUBSCRIPTION_ARCHITECTURE.md supersedes assignment-only notes.
+  Local INR499/1999 offers are QA-only, not approved pricing. Add-ons/proration,
+  recurring mandates/tax invoices/paid coupon commissions remain unfinished.
+
+## Civil connected localhost rehearsal — 2026-10-19
+
+- Added app-key-authenticated PUT /api/v1/integrations/apps/{app_id}/tenants/{external_id}:
+  idempotent concurrent company/contact sync, no subscriber status/grants/payment
+  mutation. Audits actual creates/updates. No new schema migration. Civil signup
+  calls it; failed sync does not roll back Civil login and Owner/Admin can retry.
+- Fixed storefront GET/PUT response 500: project public fields, not ORM __dict__.
+- Separate fresh QA databases on127.0.0.1:55449; OS API8010/UI localhost:5174,
+  Civil API5501/UI localhost:5173. No existing .env or production data touched.
+- Two QA-only zero-priced monthly plans published; Civil enforcement enabled in
+  QA process only. Enterprise main test company, Base5 and Enterprise100 photos,
+  1/5GiB site-photo allowances; not approved commercial pricing, no payment.
+- 200 real connected checks plus19 provisioning passed: quotas, exact100/101,
+  lifecycle/replacement, tenant/app credentials, restricted staff, outage/recovery.
+- OS110 passed/1 optional skipped (payment-DB tests excluded), Ruff/mypy and UI
+  lint/build passed. Civil verify10 backend test files + UI passed. Civil plan
+  browser confirmed; OS login/apps confirmed; app-detail browser review timed
+  out twice, so subscriber browser detail remains uncertified (real API passed).
+- Restart commands/QA accounts: ../charis_civil/LOCAL_SUBSCRIPTION_QA.md. Private
+  runtime /tmp/charis-connected-oovQz0/connection.json must never be committed.
+- No push/deploy this turn. Prior requested OS release main d4bad54 was pushed;
+  older notes saying unpushed are historical. Civil customer checkout/storage
+  add-ons/seat enforcement/automatic billing remain outside this implementation.
+
 ## Razorpay one-time checkout — 2026-10-13
 
 - Added administrator Razorpay checkout in selected-app Subscriptions UI, saved

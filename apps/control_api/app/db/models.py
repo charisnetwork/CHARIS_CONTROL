@@ -766,9 +766,10 @@ class RazorpayCheckout(IdMixin, ApplicationScopedMixin, TimestampMixin, Base):
     amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="creating")
-    requested_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("control_users.id", ondelete="RESTRICT"), nullable=False
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("control_users.id", ondelete="RESTRICT"), nullable=True
     )
+    external_actor_id: Mapped[str | None] = mapped_column(String(255))
     reason: Mapped[str] = mapped_column(String(500), nullable=False)
 
     __table_args__ = (
@@ -783,9 +784,12 @@ class RazorpayCheckout(IdMixin, ApplicationScopedMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("application_id", "idempotency_key", name="uq_razorpay_checkout_key"),
+        CheckConstraint(
+            "requested_by IS NOT NULL OR external_actor_id IS NOT NULL", name="checkout_has_actor"
+        ),
         CheckConstraint("amount_minor >= 100", name="razorpay_checkout_minimum"),
         CheckConstraint(
-            "status IN ('creating', 'ready', 'paid', 'review', 'refunded')",
+            "status IN ('creating', 'ready', 'paid', 'review', 'refunded', 'expired')",
             name="razorpay_checkout_status",
         ),
         Index("ix_razorpay_checkout_app_created", "application_id", "created_at"),

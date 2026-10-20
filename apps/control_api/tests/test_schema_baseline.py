@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-from sqlalchemy import Enum, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import Column, Enum, ForeignKeyConstraint, String, UniqueConstraint
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
@@ -33,6 +33,13 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
     migration = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(migration)
     migration.checkout.to_metadata(baseline.metadata)
+    # The incremental customer checkout revision adds this nullable actor column.
+    assert (
+        Path(__file__).parents[1] / "alembic/versions/20261020_0003_customer_checkout.py"
+    ).exists()
+    baseline.metadata.tables["razorpay_checkouts"].append_column(
+        Column("external_actor_id", String(255))
+    )
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

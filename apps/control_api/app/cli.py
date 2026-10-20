@@ -11,6 +11,7 @@ from app.core.security import hash_password, normalize_email
 from app.db.models import ControlUser, UserRole, UserStatus
 from app.db.session import SessionFactory, engine
 from app.domains.notifications.service import notification_service
+from app.domains.payments.service import expire_stale_checkouts
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -25,6 +26,10 @@ def _parser() -> argparse.ArgumentParser:
         "process-notifications", description="Materialize due scheduled notification deliveries"
     )
     process_notifications.add_argument("--limit", type=int, default=100)
+    commands.add_parser(
+        "expire-checkouts",
+        description="Expire unpaid checkouts older than 24 hours and release their coupons",
+    )
     return parser
 
 
@@ -65,12 +70,22 @@ async def _process_notifications(limit: int) -> None:
     print(f"Processed {processed} notification(s) for {recipients} recipient(s)")
 
 
+async def _expire_checkouts() -> None:
+    async with SessionFactory() as session:
+        expired = await expire_stale_checkouts(session)
+        await session.commit()
+    await engine.dispose()
+    print(f"Expired {expired} unpaid checkout(s)")
+
+
 def main() -> None:
     arguments = _parser().parse_args()
     if arguments.command == "create-owner":
         asyncio.run(_create_owner(arguments.email, arguments.display_name))
     elif arguments.command == "process-notifications":
         asyncio.run(_process_notifications(arguments.limit))
+    elif arguments.command == "expire-checkouts":
+        asyncio.run(_expire_checkouts())
 
 
 if __name__ == "__main__":

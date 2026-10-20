@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.api.dependencies import AppAuthorization, DatabaseSession, require_app_permission
 from app.db.models import AppPermission, PlanEntitlement, SubscriptionPlan
@@ -14,6 +14,7 @@ from app.domains.catalog.schemas import (
     FeatureRead,
     PlanCreate,
     PlanRead,
+    PlanUpdate,
 )
 from app.domains.catalog.service import catalog_service
 
@@ -104,6 +105,42 @@ async def get_plan(
         plan_id=plan_id,
     )
     return _plan_response(plan, entitlements)
+
+
+@router.patch("/plans/{plan_id}", response_model=PlanRead)
+async def update_plan(
+    plan_id: uuid.UUID,
+    payload: PlanUpdate,
+    request: Request,
+    authorization: ManagePlans,
+    db: DatabaseSession,
+) -> PlanRead:
+    plan, entitlements = await catalog_service.update_plan(
+        db,
+        application_id=authorization.application_id,
+        plan_id=plan_id,
+        principal=authorization.principal,
+        payload=payload,
+        correlation_id=_correlation_id(request),
+    )
+    return _plan_response(plan, entitlements)
+
+
+@router.delete("/plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_plan(
+    plan_id: uuid.UUID,
+    request: Request,
+    authorization: ManagePlans,
+    db: DatabaseSession,
+) -> Response:
+    await catalog_service.delete_plan(
+        db,
+        application_id=authorization.application_id,
+        plan_id=plan_id,
+        principal=authorization.principal,
+        correlation_id=_correlation_id(request),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put("/plans/{plan_id}/entitlements", response_model=PlanRead)

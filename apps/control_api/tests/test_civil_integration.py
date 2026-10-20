@@ -15,6 +15,57 @@ from app.db.session import get_db_session
 from app.domains.subscriptions.integration import router, subscription_statement
 
 
+async def test_tenant_sync_requires_app_key_and_rejects_billing_fields() -> None:
+    application = FastAPI()
+    application.include_router(router, prefix="/api/v1")
+    db = AsyncMock()
+    application.dependency_overrides[get_db_session] = lambda: db
+    path = f"/api/v1/integrations/apps/{uuid.uuid4()}/tenants/company-a"
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.put(path, json={"name": "Company"})
+        assert response.status_code == 401
+        application.dependency_overrides[require_integration_credential] = lambda: SimpleNamespace(
+            application_id=uuid.uuid4()
+        )
+        response = await client.put(path, json={"name": "Company", "status": "active"})
+        assert response.status_code == 422
+        db.commit.assert_not_awaited()
+
+
+async def test_tenant_sync_preserves_suspended_subscriber_and_idempotent_version() -> None:
+    app_id = uuid.uuid4()
+    application = FastAPI()
+    application.include_router(router, prefix="/api/v1")
+    application.dependency_overrides[require_integration_credential] = lambda: SimpleNamespace(
+        application_id=app_id
+    )
+    subscriber = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Company",
+        email=None,
+        mobile_number=None,
+        status=SubscriberStatus.SUSPENDED,
+        version=4,
+    )
+    db = AsyncMock()
+    db.scalar.return_value = None
+    db.execute.return_value = SimpleNamespace(scalar_one=lambda: subscriber)
+    application.dependency_overrides[get_db_session] = lambda: db
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            f"/api/v1/integrations/apps/{app_id}/tenants/company-a", json={"name": "Company"}
+        )
+    assert response.status_code == 200
+    assert response.json()["tenant_id"] == "company-a"
+    assert subscriber.status == SubscriberStatus.SUSPENDED
+    assert subscriber.version == 4
+    db.commit.assert_awaited_once()
+
+
 def test_adapter_query_scopes_both_sides_and_external_tenant() -> None:
     app_id = uuid.uuid4()
     sql = str(

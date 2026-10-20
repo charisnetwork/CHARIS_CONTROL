@@ -102,7 +102,7 @@ def locked_counter_statement(
 
 def _audit(
     application_id: uuid.UUID,
-    principal: AuthenticatedUser,
+    principal: AuthenticatedUser | None,
     action: str,
     entity_type: str,
     entity_id: uuid.UUID,
@@ -111,7 +111,7 @@ def _audit(
 ) -> AuditLog:
     return AuditLog(
         application_id=application_id,
-        actor_user_id=principal.user.id,
+        actor_user_id=principal.user.id if principal else None,
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id),
@@ -405,12 +405,19 @@ class SubscriptionService:
         db: AsyncSession,
         *,
         application_id: uuid.UUID,
-        principal: AuthenticatedUser,
+        principal: AuthenticatedUser | None,
         payload: SubscriptionCreate,
         correlation_id: str,
         commit: bool = True,
         initial_status: SubscriptionStatus = SubscriptionStatus.ACTIVE,
+        customer_free_plan: bool = False,
     ) -> Subscription:
+        if (
+            principal is None
+            and initial_status != SubscriptionStatus.PENDING
+            and not customer_free_plan
+        ):
+            raise HTTPException(status_code=403, detail="Customer checkout cannot grant access")
         subscriber = await db.scalar(
             select(Subscriber)
             .where(
@@ -435,6 +442,8 @@ class SubscriptionService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Subscriber and active plan must belong to the selected application",
             )
+        if customer_free_plan and Decimal(plan.price) != 0:
+            raise HTTPException(status_code=403, detail="Only free plans activate without payment")
         if payload.starts_at > now:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -509,6 +518,7 @@ class SubscriptionService:
                 code=payload.coupon_code,
                 idempotency_key=payload.coupon_idempotency_key,
                 now=now,
+                defer_commission=initial_status == SubscriptionStatus.PENDING,
             )
             subscription.commercial_snapshot.update(
                 {
@@ -548,7 +558,7 @@ class SubscriptionService:
                 "subscriber_id": str(subscriber.id),
                 "coupon_code": payload.coupon_code,
             },
-            actor_user_id=principal.user.id,
+            actor_user_id=principal.user.id if principal else None,
         )
         webhook = WebhookEvent(
             id=uuid.uuid4(),

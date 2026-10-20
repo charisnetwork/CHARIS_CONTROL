@@ -1,4 +1,4 @@
-"""Read-only application adapter contract. Never accepts control-user credentials."""
+"""App-scoped subscription adapter. Never accepts control-user credentials."""
 
 from __future__ import annotations
 
@@ -6,12 +6,19 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Path, Response
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import Select, or_, select
+from sqlalchemy.dialects.postgresql import insert
 
 from app.api.dependencies import DatabaseSession, IntegrationCredential
+from app.core.config import get_settings
 from app.db.models import (
+    AppFeature,
+    AuditLog,
+    PlanEntitlement,
     PlanStatus,
+    PlanUiConfig,
     PlanUiItem,
     Subscriber,
     SubscriberStatus,
@@ -22,6 +29,66 @@ from app.db.models import (
 from app.domains.entitlements.schemas import EntitlementSnapshot
 
 router = APIRouter(prefix="/integrations/apps/{app_id}", tags=["subscription integration"])
+
+
+class TenantProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=160)
+    email: EmailStr | None = None
+    mobile_number: str | None = Field(default=None, max_length=32)
+
+
+@router.put("/tenants/{external_id}")
+async def sync_tenant(
+    profile: TenantProfile,
+    authorization: IntegrationCredential,
+    db: DatabaseSession,
+    response: Response,
+    external_id: str = Path(min_length=1, max_length=255),
+) -> dict[str, Any]:
+    """Idempotent company/contact sync; never changes grants, status or billing."""
+    response.headers["Cache-Control"] = "no-store"
+    values = profile.model_dump(mode="json")
+    created_id = await db.scalar(
+        insert(Subscriber)
+        .values(application_id=authorization.application_id, external_id=external_id, **values)
+        .on_conflict_do_nothing(constraint="uq_subscribers_app_external")
+        .returning(Subscriber.id)
+    )
+    subscriber = (
+        await db.execute(
+            select(Subscriber)
+            .where(
+                Subscriber.application_id == authorization.application_id,
+                Subscriber.external_id == external_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one()
+    changed = any(getattr(subscriber, key) != value for key, value in values.items())
+    if changed:
+        for key, value in values.items():
+            setattr(subscriber, key, value)
+        subscriber.version += 1
+    if created_id is not None or changed:
+        db.add(
+            AuditLog(
+                application_id=authorization.application_id,
+                action="integration.tenant.created" if created_id else "integration.tenant.updated",
+                entity_type="subscriber",
+                entity_id=str(subscriber.id),
+                correlation_id=str(uuid.uuid4()),
+                after_summary={"external_id": external_id, "source": "application_credential"},
+            )
+        )
+    await db.commit()
+    return {
+        "contract_version": 1,
+        "application_id": str(authorization.application_id),
+        "tenant_id": external_id,
+        "subscriber_id": str(subscriber.id),
+        "synced": True,
+    }
 
 
 def subscription_statement(
@@ -130,10 +197,43 @@ async def subscription_catalog(
             .order_by(PlanUiItem.display_order, SubscriptionPlan.id)
         )
     ).all()
+    recommended = await db.scalar(
+        select(PlanUiConfig.recommended_plan_id).where(
+            PlanUiConfig.application_id == authorization.application_id
+        )
+    )
+    published_grants: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    if rows:
+        grants = (
+            await db.execute(
+                select(PlanEntitlement, AppFeature)
+                .join(
+                    AppFeature,
+                    (AppFeature.id == PlanEntitlement.feature_id)
+                    & (AppFeature.application_id == PlanEntitlement.application_id),
+                )
+                .where(
+                    PlanEntitlement.application_id == authorization.application_id,
+                    AppFeature.application_id == authorization.application_id,
+                    PlanEntitlement.plan_id.in_([plan.id for plan, _ in rows]),
+                )
+            )
+        ).all()
+        for grant, feature in grants:
+            published_grants.setdefault(grant.plan_id, []).append(
+                EntitlementSnapshot(
+                    feature_code=feature.code,
+                    enabled=grant.enabled,
+                    limit_type=grant.limit_type,
+                    limit_value=grant.limit_value,
+                    unit=grant.unit,
+                    reset_period=grant.reset_period,
+                ).model_dump(mode="json")
+            )
     return {
         "contract_version": 1,
         "application_id": str(authorization.application_id),
-        "checkout_enabled": False,
+        "checkout_enabled": get_settings().razorpay_enabled,
         "plans": [
             {
                 "id": str(plan.id),
@@ -143,6 +243,8 @@ async def subscription_catalog(
                 "currency": plan.currency,
                 "duration_value": plan.duration_value,
                 "duration_unit": plan.duration_unit.value,
+                "entitlements": published_grants.get(plan.id, []),
+                "recommended": plan.id == recommended,
             }
             for plan, item in rows
         ],

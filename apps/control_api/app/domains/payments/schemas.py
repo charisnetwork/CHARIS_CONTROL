@@ -1,7 +1,7 @@
 import uuid
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CheckoutCreate(BaseModel):
@@ -12,6 +12,12 @@ class CheckoutCreate(BaseModel):
     previous_subscription_id: uuid.UUID | None = None
     previous_version: int | None = Field(default=None, ge=1)
     reason: str = Field(min_length=5, max_length=500)
+    coupon_code: str | None = Field(default=None, min_length=2, max_length=100)
+
+    @field_validator("coupon_code", mode="before")
+    @classmethod
+    def normalize_coupon_code(cls, value: object) -> object:
+        return value.strip().upper() or None if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def require_previous_pair(self) -> Self:

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from app.db.models import (
     ValueType,
     WebhookEvent,
 )
-from app.domains.coupons.schemas import CouponCreate
+from app.domains.coupons.schemas import CouponCreate, CouponUpdate
 
 MONEY_QUANTUM = Decimal("0.01")
 
@@ -193,6 +193,200 @@ class CouponService:
             ) from exc
         return coupon, payload.plan_ids
 
+    async def _validate_plans(
+        self, db: AsyncSession, application_id: uuid.UUID, plan_ids: list[uuid.UUID]
+    ) -> None:
+        if not plan_ids:
+            return
+        count = await db.scalar(
+            select(func.count())
+            .select_from(SubscriptionPlan)
+            .where(
+                SubscriptionPlan.application_id == application_id,
+                SubscriptionPlan.id.in_(plan_ids),
+            )
+        )
+        if count != len(plan_ids):
+            raise HTTPException(
+                status_code=422, detail="Every selected plan must belong to this application"
+            )
+
+    async def _locked(
+        self, db: AsyncSession, application_id: uuid.UUID, coupon_id: uuid.UUID
+    ) -> Coupon:
+        coupon = await db.scalar(
+            select(Coupon)
+            .where(Coupon.application_id == application_id, Coupon.id == coupon_id)
+            .with_for_update()
+        )
+        if coupon is None:
+            raise HTTPException(status_code=404, detail="Coupon not found")
+        return coupon
+
+    async def update_coupon(
+        self,
+        db: AsyncSession,
+        *,
+        application_id: uuid.UUID,
+        coupon_id: uuid.UUID,
+        principal: AuthenticatedUser,
+        payload: CouponUpdate,
+        correlation_id: str,
+    ) -> tuple[Coupon, list[uuid.UUID]]:
+        coupon = await self._locked(db, application_id, coupon_id)
+        if coupon.version != payload.expected_version:
+            raise HTTPException(
+                status_code=409, detail="Coupon was changed by someone else; reload and retry"
+            )
+        changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+        for field in ("name", "status", "starts_at", "ends_at", "maximum_redemptions"):
+            if field in changes and changes[field] is None:
+                raise HTTPException(status_code=422, detail=f"{field} cannot be empty")
+        if coupon.redemption_count and {"discount_value", "commission_value"} & changes.keys():
+            raise HTTPException(
+                status_code=409,
+                detail="Discount and commission are fixed after the first use; "
+                "disable this coupon and create a new one",
+            )
+        if "commission_value" in changes and coupon.affiliate_id is None:
+            raise HTTPException(status_code=422, detail="Promotion coupons have no commission")
+        if (
+            changes.get("discount_value") is not None
+            and coupon.discount_type == ValueType.PERCENTAGE
+            and changes["discount_value"] > 100
+        ) or (
+            changes.get("commission_value") is not None
+            and coupon.commission_type == ValueType.PERCENTAGE
+            and changes["commission_value"] > 100
+        ):
+            raise HTTPException(status_code=422, detail="Percentages must be at most 100")
+        starts_at = changes.get("starts_at", coupon.starts_at)
+        ends_at = changes.get("ends_at", coupon.ends_at)
+        if ends_at <= starts_at:
+            raise HTTPException(status_code=422, detail="ends_at must be later than starts_at")
+        if changes.get("maximum_redemptions", coupon.maximum_redemptions) < coupon.redemption_count:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Maximum uses cannot be below the {coupon.redemption_count} already used",
+            )
+        plan_ids = changes.pop("plan_ids", None)
+        for field, value in changes.items():
+            setattr(coupon, field, value)
+        if coupon.status != CouponStatus.DISABLED:
+            coupon.status = (
+                CouponStatus.SCHEDULED
+                if coupon.starts_at > datetime.now(UTC)
+                else CouponStatus.ACTIVE
+            )
+        if plan_ids is not None:
+            await self._validate_plans(db, application_id, plan_ids)
+            await db.execute(
+                delete(CouponPlan).where(
+                    CouponPlan.application_id == application_id, CouponPlan.coupon_id == coupon.id
+                )
+            )
+            db.add_all(
+                CouponPlan(application_id=application_id, coupon_id=coupon.id, plan_id=plan_id)
+                for plan_id in plan_ids
+            )
+        coupon.version += 1
+        db.add_all(
+            [
+                AuditLog(
+                    application_id=application_id,
+                    actor_user_id=principal.user.id,
+                    action="coupon.updated",
+                    entity_type="coupon",
+                    entity_id=str(coupon.id),
+                    correlation_id=correlation_id,
+                    after_summary={
+                        "code": coupon.code,
+                        "changed": sorted(
+                            [*changes, *(["plan_ids"] if plan_ids is not None else [])]
+                        ),
+                        "version": coupon.version,
+                    },
+                ),
+                WebhookEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    event_type="coupon.updated",
+                    aggregate_type="coupon",
+                    aggregate_id=str(coupon.id),
+                    payload={"coupon_id": str(coupon.id), "code": coupon.code},
+                    idempotency_key=f"coupon.updated:{coupon.id}:{coupon.version}",
+                    occurred_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        await db.commit()
+        await db.refresh(coupon)
+        current_plans = list(
+            (
+                await db.scalars(
+                    select(CouponPlan.plan_id).where(
+                        CouponPlan.application_id == application_id,
+                        CouponPlan.coupon_id == coupon.id,
+                    )
+                )
+            ).all()
+        )
+        return coupon, current_plans
+
+    async def delete_coupon(
+        self,
+        db: AsyncSession,
+        *,
+        application_id: uuid.UUID,
+        coupon_id: uuid.UUID,
+        principal: AuthenticatedUser,
+        correlation_id: str,
+    ) -> None:
+        """Delete an unused coupon. Used coupons keep their history and can only be disabled."""
+        coupon = await self._locked(db, application_id, coupon_id)
+        used = await db.scalar(
+            select(func.count())
+            .select_from(CouponRedemption)
+            .where(
+                CouponRedemption.application_id == application_id,
+                CouponRedemption.coupon_id == coupon.id,
+            )
+        )
+        if used or coupon.redemption_count:
+            raise HTTPException(
+                status_code=409, detail="This coupon has been used; disable it instead"
+            )
+        await db.execute(
+            delete(CouponPlan).where(
+                CouponPlan.application_id == application_id, CouponPlan.coupon_id == coupon.id
+            )
+        )
+        await db.delete(coupon)
+        db.add_all(
+            [
+                AuditLog(
+                    application_id=application_id,
+                    actor_user_id=principal.user.id,
+                    action="coupon.deleted",
+                    entity_type="coupon",
+                    entity_id=str(coupon_id),
+                    correlation_id=correlation_id,
+                    after_summary={"code": coupon.code},
+                ),
+                WebhookEvent(
+                    id=uuid.uuid4(),
+                    application_id=application_id,
+                    event_type="coupon.deleted",
+                    aggregate_type="coupon",
+                    aggregate_id=str(coupon_id),
+                    payload={"coupon_id": str(coupon_id), "code": coupon.code},
+                    idempotency_key=f"coupon.deleted:{coupon_id}",
+                    occurred_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        await db.commit()
+
     async def apply_to_subscription(
         self,
         db: AsyncSession,
@@ -204,6 +398,7 @@ class CouponService:
         code: str,
         idempotency_key: str,
         now: datetime,
+        defer_commission: bool = False,
     ) -> AppliedCoupon:
         prior = await db.scalar(
             select(CouponRedemption.id).where(
@@ -329,7 +524,8 @@ class CouponService:
                         detail="Affiliate commission currency does not match the plan currency",
                     )
             commission = calculate_commission(coupon, final)
-            if commission > 0:
+            # Paid checkouts reserve the redemption now; commission is earned on capture.
+            if commission > 0 and not defer_commission:
                 db.add(
                     AffiliateCommission(
                         id=uuid.uuid4(),
@@ -345,6 +541,84 @@ class CouponService:
                     )
                 )
         return AppliedCoupon(code=coupon.code, discount_amount=discount, final_amount=final)
+
+    async def settle_checkout_commission(
+        self,
+        db: AsyncSession,
+        *,
+        subscription: Subscription,
+        now: datetime,
+        refunded: bool,
+    ) -> None:
+        """Earn (on capture) or reverse (on full refund) a deferred affiliate commission."""
+        row = (
+            await db.execute(
+                select(CouponRedemption, Coupon)
+                .join(
+                    Coupon,
+                    (Coupon.id == CouponRedemption.coupon_id)
+                    & (Coupon.application_id == CouponRedemption.application_id),
+                )
+                .where(
+                    CouponRedemption.application_id == subscription.application_id,
+                    CouponRedemption.subscription_id == subscription.id,
+                )
+            )
+        ).one_or_none()
+        if row is None or row[1].affiliate_id is None:
+            return
+        redemption, coupon = row
+        earned = await db.scalar(
+            select(AffiliateCommission).where(
+                AffiliateCommission.application_id == subscription.application_id,
+                AffiliateCommission.reference == f"coupon-redemption:{redemption.id}",
+                AffiliateCommission.entry_type == CommissionEntryType.EARNED,
+            )
+        )
+        if refunded:
+            reference = f"coupon-refund:{redemption.id}"
+            reversed_already = await db.scalar(
+                select(AffiliateCommission.id).where(
+                    AffiliateCommission.application_id == subscription.application_id,
+                    AffiliateCommission.reference == reference,
+                    AffiliateCommission.entry_type == CommissionEntryType.ADJUSTMENT,
+                )
+            )
+            if earned is not None and reversed_already is None:
+                db.add(
+                    AffiliateCommission(
+                        id=uuid.uuid4(),
+                        application_id=subscription.application_id,
+                        affiliate_id=earned.affiliate_id,
+                        redemption_id=redemption.id,
+                        entry_type=CommissionEntryType.ADJUSTMENT,
+                        amount=-earned.amount,
+                        currency=earned.currency,
+                        reference=reference,
+                        notes=f"Reversed after full refund of coupon {coupon.code}",
+                        occurred_at=now,
+                    )
+                )
+            return
+        if earned is not None:
+            return
+        final = Decimal(str(subscription.commercial_snapshot.get("final_price", "0")))
+        commission = calculate_commission(coupon, final)
+        if commission > 0:
+            db.add(
+                AffiliateCommission(
+                    id=uuid.uuid4(),
+                    application_id=subscription.application_id,
+                    affiliate_id=coupon.affiliate_id,
+                    redemption_id=redemption.id,
+                    entry_type=CommissionEntryType.EARNED,
+                    amount=commission,
+                    currency=redemption.currency,
+                    reference=f"coupon-redemption:{redemption.id}",
+                    notes=f"Earned from paid checkout with coupon {coupon.code}",
+                    occurred_at=now,
+                )
+            )
 
 
 coupon_service = CouponService()
