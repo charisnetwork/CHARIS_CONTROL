@@ -49,6 +49,14 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
         baseline.metadata.tables["app_features"].append_column(Column(name, String()))
     for name in ("tagline", "badge", "compare_at_price", "pricing_group"):
         baseline.metadata.tables["subscription_plans"].append_column(Column(name, String()))
+    # 20261021_0006 adds the read-only owner profile and restriction fields.
+    path = Path(__file__).parents[1] / "alembic/versions/20261021_0006_user_directory.py"
+    specification = importlib.util.spec_from_file_location("user_directory_migration", path)
+    assert specification is not None and specification.loader is not None
+    user_directory = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(user_directory)
+    for name, _ in user_directory.COLUMNS:
+        baseline.metadata.tables["subscribers"].append_column(Column(name, String()))
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

@@ -99,6 +99,7 @@ async def test_active_expired_suspended_and_missing_snapshot() -> None:
         application_id=app_id
     )
     db = AsyncMock()
+    db.scalar.return_value = None  # restricted_at: the account is not restricted
     application.dependency_overrides[get_db_session] = lambda: db
     now = datetime.now(UTC)
     subscription = SimpleNamespace(
@@ -133,4 +134,12 @@ async def test_active_expired_suspended_and_missing_snapshot() -> None:
             assert response.json()["status"] == expected
             assert response.json()["tenant_id"] == "company-a"
             assert response.json()["application_id"] == str(app_id)
+            assert response.json()["restricted"] is False
             assert response.headers["cache-control"] == "no-store"
+        # An operator restriction applies even when the account has no subscription.
+        db.scalar.return_value = now
+        response = await client.get(
+            f"/api/v1/integrations/apps/{app_id}/tenants/company-a/subscription"
+        )
+        assert response.json()["status"] == "suspended"
+        assert response.json()["restricted"] is True

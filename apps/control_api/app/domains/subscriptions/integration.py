@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Path, Response
@@ -33,11 +33,45 @@ from app.domains.entitlements.schemas import EntitlementSnapshot
 router = APIRouter(prefix="/integrations/apps/{app_id}", tags=["subscription integration"])
 
 
+class TenantOwner(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    user_id: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=160)
+    gender: str | None = Field(default=None, max_length=32)
+    date_of_birth: date | None = None
+
+
 class TenantProfile(BaseModel):
+    """Company/contact sync. Fields after mobile_number are optional so older apps still sync."""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=160)
     email: EmailStr | None = None
     mobile_number: str | None = Field(default=None, max_length=32)
+    owner: TenantOwner | None = None
+    location: str | None = Field(default=None, max_length=200)
+    team_size: int | None = Field(default=None, ge=0, le=1_000_000)
+    joined_at: datetime | None = None
+    last_active_at: datetime | None = None
+
+    def column_values(self) -> dict[str, Any]:
+        """Subscriber columns to write; profile fields an app does not send are left as they are."""
+        values: dict[str, Any] = self.model_dump(include={"name", "email", "mobile_number"})
+        values.update(
+            self.model_dump(
+                include={"location", "team_size", "joined_at", "last_active_at"},
+                exclude_unset=True,
+            )
+        )
+        if "owner" in self.model_fields_set:
+            owner = self.owner
+            values.update(
+                contact_user_id=owner.user_id if owner else None,
+                contact_name=owner.name if owner else None,
+                gender=owner.gender if owner else None,
+                date_of_birth=owner.date_of_birth if owner else None,
+            )
+        return values
 
 
 @router.put("/tenants/{external_id}")
@@ -50,7 +84,7 @@ async def sync_tenant(
 ) -> dict[str, Any]:
     """Idempotent company/contact sync; never changes grants, status or billing."""
     response.headers["Cache-Control"] = "no-store"
-    values = profile.model_dump(mode="json")
+    values = profile.column_values()
     created_id = await db.scalar(
         insert(Subscriber)
         .values(application_id=authorization.application_id, external_id=external_id, **values)
@@ -72,6 +106,7 @@ async def sync_tenant(
         for key, value in values.items():
             setattr(subscriber, key, value)
         subscriber.version += 1
+    subscriber.profile_synced_at = datetime.now(UTC)
     if created_id is not None or changed:
         db.add(
             AuditLog(
@@ -150,7 +185,17 @@ async def tenant_subscription(
         "starts_at": None,
         "ends_at": None,
         "entitlements": [],
+        "restricted": False,
     }
+    # An operator restriction blocks the whole account, with or without a subscription.
+    restricted_at = await db.scalar(
+        select(Subscriber.restricted_at).where(
+            Subscriber.application_id == authorization.application_id,
+            Subscriber.external_id == external_id,
+        )
+    )
+    if restricted_at is not None:
+        base.update(status="suspended", restricted=True)
     if current is None:
         return base
     subscription, subscriber = current

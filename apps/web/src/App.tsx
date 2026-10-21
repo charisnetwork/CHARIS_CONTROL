@@ -16,7 +16,7 @@ import { Notifications } from './pages/applications/Notifications';
 import { Reports } from './pages/applications/Reports';
 import { Settings } from './pages/applications/Settings';
 import { PlansCatalog } from './pages/applications/PlansCatalog';
-import { Subscribers } from './pages/applications/Subscribers';
+import { Users } from './pages/applications/Users';
 import { Subscriptions } from './pages/applications/Subscriptions';
 import Login from './pages/auth/Login';
 import { listApplications, restoreSession } from './services/controlApi';
@@ -75,7 +75,8 @@ const router = createBrowserRouter([
             children: [
               { index: true, element: <Navigate to="overview" replace /> },
               { path: 'overview', element: <ApplicationOverview /> },
-              { path: 'subscribers', element: <Subscribers /> },
+              { path: 'users', element: <Users /> },
+              { path: 'subscribers', element: <Navigate to="../users" replace /> },
               { path: 'subscriptions', element: <Subscriptions /> },
               { path: 'plans', element: <PlansCatalog /> },
               { path: 'coupons', element: <Coupons /> },

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -10,6 +10,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -459,11 +460,25 @@ class Subscriber(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionMixin, 
         "metadata", JSONB, nullable=False, default=dict, server_default="{}"
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Read-only profile of the account owner, published by the app on every sync.
+    contact_name: Mapped[str | None] = mapped_column(String(160))
+    contact_user_id: Mapped[str | None] = mapped_column(String(255))
+    gender: Mapped[str | None] = mapped_column(String(32))
+    date_of_birth: Mapped[date | None] = mapped_column(Date)
+    location: Mapped[str | None] = mapped_column(String(200))
+    team_size: Mapped[int | None] = mapped_column(Integer)
+    joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    profile_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set together with status=suspended when an operator blocks the account.
+    restricted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restriction_reason: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         UniqueConstraint("application_id", "external_id", name="uq_subscribers_app_external"),
         UniqueConstraint("id", "application_id", name="uq_subscribers_id_app"),
         Index("ix_subscribers_app_email", "application_id", "email"),
+        Index("ix_subscribers_app_mobile", "application_id", "mobile_number"),
     )
 
 

@@ -348,19 +348,80 @@ export async function listSubscribers(applicationId: string): Promise<Subscriber
   return data;
 }
 
-export async function createSubscriber(
-  applicationId: string,
-  payload: {
-    external_id: string;
-    name: string;
-    email?: string;
-    mobile_number?: string;
-  },
-): Promise<Subscriber> {
-  const { data } = await controlApi.post<Subscriber>(
-    `/apps/${applicationId}/subscribers`,
-    { ...payload, metadata: {} },
-  );
+export type UserAccess = 'active' | 'pending' | 'expired' | 'cancelled' | 'suspended' | 'no_plan' | 'restricted';
+
+export interface AppUserSubscription {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  billing: string;
+  price: string;
+  currency: string;
+  status: string;
+  starts_at: string;
+  ends_at: string | null;
+  cancelled_at: string | null;
+  coupon: { code: string; name: string; discount_amount: string; affiliate_id: string | null; affiliate_name: string | null } | null;
+}
+
+/** One customer account of an app, as the app reports it. Read-only in OS. */
+export interface AppUser {
+  id: string;
+  external_id: string;
+  business_name: string;
+  contact_name: string | null;
+  contact_user_id: string | null;
+  email: string | null;
+  mobile_number: string | null;
+  gender: string | null;
+  date_of_birth: string | null;
+  location: string | null;
+  team_size: number | null;
+  joined_at: string | null;
+  last_active_at: string | null;
+  profile_synced_at: string | null;
+  access: UserAccess;
+  subscription: AppUserSubscription | null;
+  first_subscribed_at: string | null;
+  inactive_since: string | null;
+  total_paid: string;
+  restricted_at: string | null;
+  restriction_reason: string | null;
+}
+
+export interface AppUserDetail extends AppUser {
+  subscriptions: AppUserSubscription[];
+  payments: Array<{ id: string; subscription_id: string; amount: string; net_amount: string; currency: string; status: string; paid_at: string | null; provider_payment_id: string }>;
+}
+
+export interface UserFilters {
+  q?: string;
+  access?: UserAccess;
+  plan_id?: string;
+  coupon?: 'used' | 'none';
+  affiliate_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function listUsers(applicationId: string, filters: UserFilters): Promise<{ total: number; items: AppUser[] }> {
+  const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''));
+  const { data } = await controlApi.get<{ total: number; items: AppUser[] }>(`/apps/${applicationId}/users`, { params });
+  return data;
+}
+
+export async function getUser(applicationId: string, userId: string): Promise<AppUserDetail> {
+  const { data } = await controlApi.get<AppUserDetail>(`/apps/${applicationId}/users/${userId}`);
+  return data;
+}
+
+export async function restrictUser(applicationId: string, userId: string, reason: string): Promise<AppUserDetail> {
+  const { data } = await controlApi.post<AppUserDetail>(`/apps/${applicationId}/users/${userId}/restrict`, { reason });
+  return data;
+}
+
+export async function restoreUser(applicationId: string, userId: string, note: string): Promise<AppUserDetail> {
+  const { data } = await controlApi.post<AppUserDetail>(`/apps/${applicationId}/users/${userId}/restore`, { note });
   return data;
 }
 

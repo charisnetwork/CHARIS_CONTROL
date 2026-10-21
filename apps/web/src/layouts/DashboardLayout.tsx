@@ -23,7 +23,7 @@ function cn(...inputs: ClassValue[]) {
 
 const navigation = [
   { name: 'Overview', path: 'overview', icon: LayoutDashboard },
-  { name: 'Subscribers', path: 'subscribers', icon: Users },
+  { name: 'Users', path: 'users', icon: Users },
   { name: 'Subscriptions', path: 'subscriptions', icon: CreditCard },
   { name: 'Plans', path: 'plans', icon: Package },
   { name: 'Coupons', path: 'coupons', icon: Ticket },

@@ -15,6 +15,7 @@ from app.domains.settings.router import integration_router
 from app.domains.settings.router import router as settings_router
 from app.domains.subscriptions.integration import router as subscription_integration_router
 from app.domains.subscriptions.router import router as subscriptions_router
+from app.domains.users.router import router as users_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -27,6 +28,7 @@ api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(governance_router)
 api_v1_router.include_router(subscriptions_router)
+api_v1_router.include_router(users_router)
 api_v1_router.include_router(settings_router)
 api_v1_router.include_router(integration_router)
 api_v1_router.include_router(subscription_integration_router)
