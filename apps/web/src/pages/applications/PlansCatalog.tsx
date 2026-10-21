@@ -34,7 +34,8 @@ function groupFeatures(features: AppFeature[]) {
     const key = feature.group_name || (feature.source === 'app' ? 'General' : 'Custom (typed in OS)');
     groups.set(key, [...(groups.get(key) ?? []), feature]);
   }
-  return [...groups.entries()];
+  // The app's own groups first; hand-typed codes last.
+  return [...groups.entries()].sort(([a], [b]) => Number(a.startsWith('Custom')) - Number(b.startsWith('Custom')));
 }
 
 const limitText = (item: { limit_type: string | null; limit_value: number | null; unit: string | null; reset_period: ResetPeriod | null }) =>
