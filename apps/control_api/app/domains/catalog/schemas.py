@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -44,6 +44,49 @@ class FeatureCreate(BaseModel):
         return self
 
 
+class ManifestFeature(BaseModel):
+    """One feature an app enforces, as published by the app itself."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    code: str = Field(min_length=2, max_length=100)
+    name: str = Field(min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+    group: str | None = Field(default=None, max_length=80)
+    kind: Literal["toggle", "limit"] = "toggle"
+    unit: str | None = Field(default=None, min_length=1, max_length=64)
+    reset_periods: list[ResetPeriod] = Field(default_factory=list)
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, value: str) -> str:
+        if not CODE_PATTERN.fullmatch(value):
+            raise ValueError("code must use lowercase letters, numbers, and underscores")
+        return value
+
+    @model_validator(mode="after")
+    def validate_kind(self) -> Self:
+        if self.kind == "toggle" and (self.unit or self.reset_periods):
+            raise ValueError("on/off features cannot define units or reset periods")
+        if self.kind == "limit" and (not self.unit or not self.reset_periods):
+            raise ValueError("limit features need a unit and at least one reset period")
+        return self
+
+
+class FeatureManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal[1]
+    features: list[ManifestFeature] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_codes(self) -> Self:
+        codes = [feature.code for feature in self.features]
+        if len(codes) != len(set(codes)):
+            raise ValueError("feature codes must be unique")
+        return self
+
+
 class FeatureRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +99,10 @@ class FeatureRead(BaseModel):
     allowed_reset_periods: list[ResetPeriod]
     supports_numeric_limit: bool
     active: bool
+    group_name: str | None = None
+    display_order: int = 0
+    source: str = "manual"
+    synced_at: datetime | None = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -117,6 +164,10 @@ class PlanCreate(BaseModel):
     user_limit_unlimited: bool = False
     status: PlanStatus = PlanStatus.DRAFT
     effective_at: datetime | None = None
+    tagline: str | None = Field(default=None, max_length=200)
+    badge: str | None = Field(default=None, max_length=40)
+    compare_at_price: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
+    pricing_group: str | None = Field(default=None, max_length=100)
     entitlements: list[EntitlementInput] = Field(default_factory=list)
 
     @field_validator("code", mode="before")
@@ -150,6 +201,8 @@ class PlanCreate(BaseModel):
                 raise ValueError("effective_at must include a timezone")
         if self.status == PlanStatus.ARCHIVED:
             raise ValueError("new plans cannot be archived")
+        if self.compare_at_price is not None and self.compare_at_price <= self.price:
+            raise ValueError("the original (struck-through) price must be higher than the price")
         return self
 
 
@@ -169,6 +222,10 @@ class PlanUpdate(BaseModel):
     user_limit_unlimited: bool | None = None
     status: PlanStatus | None = None
     effective_at: datetime | None = None
+    tagline: str | None = Field(default=None, max_length=200)
+    badge: str | None = Field(default=None, max_length=40)
+    compare_at_price: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
+    pricing_group: str | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
     def validate_update(self) -> Self:
@@ -197,6 +254,10 @@ class PlanRead(BaseModel):
     status: PlanStatus
     effective_at: datetime | None
     archived_at: datetime | None
+    tagline: str | None = None
+    badge: str | None = None
+    compare_at_price: Decimal | None = None
+    pricing_group: str | None = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -221,6 +282,7 @@ __all__ = [
     "EntitlementRead",
     "EntitlementSet",
     "FeatureCreate",
+    "FeatureManifest",
     "FeatureRead",
     "PlanCreate",
     "PlanRead",

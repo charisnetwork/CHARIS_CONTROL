@@ -164,6 +164,11 @@ export interface AppFeature {
   allowed_reset_periods: ResetPeriod[];
   supports_numeric_limit: boolean;
   active: boolean;
+  group_name: string | null;
+  display_order: number;
+  /** "app": published by the app itself; "manual": typed in OS (the app may not use it). */
+  source: 'app' | 'manual';
+  synced_at: string | null;
   version: number;
 }
 
@@ -192,8 +197,19 @@ export interface SubscriptionPlan {
   user_limit_unlimited: boolean;
   status: 'draft' | 'active' | 'archived';
   effective_at: string | null;
+  tagline: string | null;
+  badge: string | null;
+  compare_at_price: string | null;
+  pricing_group: string | null;
   version: number;
   entitlements: PlanEntitlement[];
+}
+
+export interface PlanPresentation {
+  tagline?: string | null;
+  badge?: string | null;
+  compare_at_price?: string | null;
+  pricing_group?: string | null;
 }
 
 export interface EntitlementPayload {
@@ -205,7 +221,7 @@ export interface EntitlementPayload {
   reset_period?: ResetPeriod;
 }
 
-export interface CreatePlanPayload {
+export interface CreatePlanPayload extends PlanPresentation {
   name: string;
   code: string;
   description?: string;
@@ -257,7 +273,7 @@ export async function createPlan(
   return data;
 }
 
-export interface UpdatePlanPayload {
+export interface UpdatePlanPayload extends PlanPresentation {
   expected_version: number;
   name?: string;
   description?: string | null;

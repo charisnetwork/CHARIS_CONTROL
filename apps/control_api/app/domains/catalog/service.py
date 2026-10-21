@@ -23,7 +23,13 @@ from app.db.models import (
     SubscriptionPlan,
     WebhookEvent,
 )
-from app.domains.catalog.schemas import EntitlementInput, FeatureCreate, PlanCreate, PlanUpdate
+from app.domains.catalog.schemas import (
+    EntitlementInput,
+    FeatureCreate,
+    FeatureManifest,
+    PlanCreate,
+    PlanUpdate,
+)
 
 
 def _audit(
@@ -74,7 +80,7 @@ class CatalogService:
         result = await db.scalars(
             select(AppFeature)
             .where(AppFeature.application_id == application_id, AppFeature.active.is_(True))
-            .order_by(AppFeature.name, AppFeature.id)
+            .order_by(AppFeature.display_order, AppFeature.name, AppFeature.id)
         )
         return list(result.all())
 
@@ -210,6 +216,10 @@ class CatalogService:
             user_limit_unlimited=payload.user_limit_unlimited,
             status=payload.status,
             effective_at=payload.effective_at,
+            tagline=payload.tagline,
+            badge=payload.badge,
+            compare_at_price=payload.compare_at_price,
+            pricing_group=payload.pricing_group,
         )
         entitlement_models = self._entitlement_models(
             application_id=application_id,
@@ -254,6 +264,73 @@ class CatalogService:
         )
         await self._commit_unique(db, "A plan with this name or code already exists")
         return plan, entitlement_models
+
+    async def sync_manifest(
+        self, db: AsyncSession, *, application_id: uuid.UUID, manifest: FeatureManifest
+    ) -> dict[str, int]:
+        """Upsert the features an app publishes; app features it no longer lists are retired.
+
+        Retired features stay on existing plans (history) but leave the plan editor.
+        Manually typed features are never touched.
+        """
+        now = datetime.now(UTC)
+        existing = {
+            feature.code: feature
+            for feature in (
+                await db.scalars(
+                    select(AppFeature)
+                    .where(AppFeature.application_id == application_id)
+                    .with_for_update()
+                )
+            ).all()
+        }
+        counts = {"created": 0, "updated": 0, "retired": 0}
+        published = set()
+        for order, item in enumerate(manifest.features):
+            published.add(item.code)
+            values = {
+                "name": item.name,
+                "description": item.description,
+                "group_name": item.group,
+                "display_order": order,
+                "default_unit": item.unit,
+                "allowed_reset_periods": [period.value for period in item.reset_periods],
+                "supports_numeric_limit": item.kind == "limit",
+                "source": "app",
+                "active": True,
+            }
+            feature = existing.get(item.code)
+            if feature is None:
+                db.add(
+                    AppFeature(
+                        application_id=application_id, code=item.code, synced_at=now, **values
+                    )
+                )
+                counts["created"] += 1
+                continue
+            if any(getattr(feature, key) != value for key, value in values.items()):
+                for key, value in values.items():
+                    setattr(feature, key, value)
+                feature.version += 1
+                counts["updated"] += 1
+            feature.synced_at = now
+        for code, feature in existing.items():
+            if feature.source == "app" and code not in published and feature.active:
+                feature.active = False
+                feature.version += 1
+                counts["retired"] += 1
+        if counts["created"] or counts["updated"] or counts["retired"]:
+            db.add(
+                _event(
+                    application_id=application_id,
+                    event_type="feature.catalog.changed",
+                    aggregate_type="application",
+                    aggregate_id=application_id,
+                    payload={"source": "app", **counts},
+                )
+            )
+        await db.commit()
+        return counts
 
     async def _locked_plan(
         self, db: AsyncSession, *, application_id: uuid.UUID, plan_id: uuid.UUID
@@ -327,6 +404,11 @@ class CatalogService:
         before = {"price": str(plan.price), "status": plan.status.value, "name": plan.name}
         for field, value in changes.items():
             setattr(plan, field, value)
+        if plan.compare_at_price is not None and plan.compare_at_price <= plan.price:
+            raise HTTPException(
+                status_code=422,
+                detail="The original (struck-through) price must be higher than the price",
+            )
         if new_status == PlanStatus.ARCHIVED:
             plan.archived_at = datetime.now(UTC)
             await self._hide_from_storefront(db, application_id=application_id, plan_id=plan_id)

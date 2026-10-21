@@ -344,9 +344,16 @@ class AppFeature(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionMixin, 
     allowed_reset_periods: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     supports_numeric_limit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Features published by the app itself (source="app") are the codes its code enforces;
+    # "manual" ones were typed in OS and may not be read by the app at all.
+    group_name: Mapped[str | None] = mapped_column(String(80))
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("application_id", "code", name="uq_app_features_app_code"),
+        CheckConstraint("source IN ('manual', 'app')", name="app_feature_source"),
         UniqueConstraint("id", "application_id", name="uq_app_features_id_app"),
     )
 
@@ -371,9 +378,19 @@ class SubscriptionPlan(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionM
     )
     effective_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Storefront presentation. Plans sharing a pricing_group are one card with a
+    # monthly/yearly switch; compare_at_price is the struck-through "was" price.
+    tagline: Mapped[str | None] = mapped_column(String(200))
+    badge: Mapped[str | None] = mapped_column(String(40))
+    compare_at_price: Mapped[Decimal | None] = mapped_column(Numeric(19, 4))
+    pricing_group: Mapped[str | None] = mapped_column(String(100))
 
     __table_args__ = (
         UniqueConstraint("application_id", "name", name="uq_subscription_plans_app_name"),
+        CheckConstraint(
+            "compare_at_price IS NULL OR compare_at_price > price",
+            name="plan_compare_at_above_price",
+        ),
         UniqueConstraint("application_id", "code", name="uq_subscription_plans_app_code"),
         UniqueConstraint("id", "application_id", name="uq_subscription_plans_id_app"),
         CheckConstraint("price >= 0", name="plan_price_nonnegative"),

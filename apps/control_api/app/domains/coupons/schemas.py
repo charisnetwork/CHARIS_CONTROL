@@ -147,7 +147,6 @@ class CouponRead(BaseModel):
     minimum_duration_unit: DurationUnit | None
     redemption_count: int
     status: CouponStatus
-    version: int
     plan_ids: list[uuid.UUID] = Field(default_factory=list)
     version: int
     created_at: datetime

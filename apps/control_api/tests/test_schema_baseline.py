@@ -40,6 +40,15 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
     baseline.metadata.tables["razorpay_checkouts"].append_column(
         Column("external_actor_id", String(255))
     )
+    # 20261021_0005 adds app-published feature details and storefront plan fields.
+    assert (
+        Path(__file__).parents[1]
+        / "alembic/versions/20261021_0005_feature_catalog_and_storefront.py"
+    ).exists()
+    for name in ("group_name", "display_order", "source", "synced_at"):
+        baseline.metadata.tables["app_features"].append_column(Column(name, String()))
+    for name in ("tagline", "badge", "compare_at_price", "pricing_group"):
+        baseline.metadata.tables["subscription_plans"].append_column(Column(name, String()))
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

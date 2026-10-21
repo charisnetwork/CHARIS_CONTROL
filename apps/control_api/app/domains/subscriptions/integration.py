@@ -26,6 +26,8 @@ from app.db.models import (
     SubscriptionPlan,
     SubscriptionStatus,
 )
+from app.domains.catalog.schemas import FeatureManifest
+from app.domains.catalog.service import catalog_service
 from app.domains.entitlements.schemas import EntitlementSnapshot
 
 router = APIRouter(prefix="/integrations/apps/{app_id}", tags=["subscription integration"])
@@ -171,6 +173,21 @@ async def tenant_subscription(
     return base
 
 
+@router.put("/feature-catalog")
+async def publish_feature_catalog(
+    payload: FeatureManifest,
+    authorization: IntegrationCredential,
+    db: DatabaseSession,
+    response: Response,
+) -> dict[str, Any]:
+    """The app publishes the features its code enforces; OS admins pick from these."""
+    response.headers["Cache-Control"] = "no-store"
+    counts = await catalog_service.sync_manifest(
+        db, application_id=authorization.application_id, manifest=payload
+    )
+    return {"contract_version": 1, "application_id": str(authorization.application_id), **counts}
+
+
 @router.get("/subscription-catalog")
 async def subscription_catalog(
     authorization: IntegrationCredential, db: DatabaseSession, response: Response
@@ -219,17 +236,33 @@ async def subscription_catalog(
                 )
             )
         ).all()
-        for grant, feature in grants:
+        for grant, feature in sorted(grants, key=lambda row: (row[1].display_order, row[1].name)):
             published_grants.setdefault(grant.plan_id, []).append(
-                EntitlementSnapshot(
-                    feature_code=feature.code,
-                    enabled=grant.enabled,
-                    limit_type=grant.limit_type,
-                    limit_value=grant.limit_value,
-                    unit=grant.unit,
-                    reset_period=grant.reset_period,
-                ).model_dump(mode="json")
+                {
+                    **EntitlementSnapshot(
+                        feature_code=feature.code,
+                        enabled=grant.enabled,
+                        limit_type=grant.limit_type,
+                        limit_value=grant.limit_value,
+                        unit=grant.unit,
+                        reset_period=grant.reset_period,
+                    ).model_dump(mode="json"),
+                    # Display only; access decisions use feature_code.
+                    "name": feature.name,
+                    "description": feature.description,
+                    "group": feature.group_name,
+                }
             )
+    features = (
+        await db.scalars(
+            select(AppFeature)
+            .where(
+                AppFeature.application_id == authorization.application_id,
+                AppFeature.active.is_(True),
+            )
+            .order_by(AppFeature.display_order, AppFeature.name)
+        )
+    ).all()
     return {
         "contract_version": 1,
         "application_id": str(authorization.application_id),
@@ -245,7 +278,22 @@ async def subscription_catalog(
                 "duration_unit": plan.duration_unit.value,
                 "entitlements": published_grants.get(plan.id, []),
                 "recommended": plan.id == recommended,
+                "tagline": plan.tagline,
+                "badge": plan.badge,
+                "compare_at_price": str(plan.compare_at_price) if plan.compare_at_price else None,
+                "pricing_group": plan.pricing_group,
             }
             for plan, item in rows
+        ],
+        # Every published feature, for the "compare all features" table.
+        "features": [
+            {
+                "code": feature.code,
+                "name": feature.name,
+                "description": feature.description,
+                "group": feature.group_name,
+                "kind": "limit" if feature.supports_numeric_limit else "toggle",
+            }
+            for feature in features
         ],
     }
