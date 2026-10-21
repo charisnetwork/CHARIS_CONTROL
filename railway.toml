@@ -1,9 +1,10 @@
+# Works whether the Railway service root is the repo root (uses ./Dockerfile) or
+# apps/control_api (uses apps/control_api/railway.toml and its Dockerfile).
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "apps/control_api/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeployCommand = "/usr/local/bin/python -m alembic upgrade head"
-startCommand = "/usr/local/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+preDeployCommand = "python -m alembic upgrade head"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
