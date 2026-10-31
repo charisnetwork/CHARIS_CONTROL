@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Path, Response
@@ -16,6 +17,10 @@ from app.core.config import get_settings
 from app.db.models import (
     AppFeature,
     AuditLog,
+    Coupon,
+    CouponKind,
+    CouponPlan,
+    CouponStatus,
     PlanEntitlement,
     PlanStatus,
     PlanUiConfig,
@@ -233,6 +238,93 @@ async def publish_feature_catalog(
     return {"contract_version": 1, "application_id": str(authorization.application_id), **counts}
 
 
+def resolved_visuals(
+    plans: list[SubscriptionPlan], recommended: uuid.UUID | None
+) -> dict[uuid.UUID, tuple[str, str]]:
+    """Turn "auto" artwork/accent into concrete presets so every app shows the same card.
+
+    Free plans get a leaf, the recommended plan a gem, the priciest paid plan (per month) a
+    crown and other paid plans a rocket. The OS plan editor preview uses the same rule.
+    """
+    months = {"day": Decimal(1) / 30, "month": Decimal(1), "year": Decimal(12)}
+
+    def monthly(plan: SubscriptionPlan) -> Decimal:
+        return plan.price / (months[plan.duration_unit.value] * plan.duration_value)
+
+    paid = [plan for plan in plans if plan.price > 0]
+    top = max((monthly(plan) for plan in paid), default=None) if len(paid) > 1 else None
+    result: dict[uuid.UUID, tuple[str, str]] = {}
+    for plan in plans:
+        if plan.price == 0:
+            auto = ("leaf", "emerald")
+        elif plan.id == recommended:
+            auto = ("gem", "violet")
+        elif top is not None and monthly(plan) == top:
+            auto = ("crown", "amber")
+        else:
+            auto = ("rocket", "blue")
+        result[plan.id] = (
+            auto[0] if plan.artwork == "auto" else plan.artwork,
+            auto[1] if plan.accent == "auto" else plan.accent,
+        )
+    return result
+
+
+async def _live_offers(
+    db: DatabaseSession, application_id: uuid.UUID, plans: list[SubscriptionPlan]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Advertised offers that checkout would accept right now; anything else is left out.
+
+    Display only: the discounted price is always recomputed by the checkout quote.
+    """
+    wanted = {plan.id: plan for plan in plans if plan.offer_coupon_id and plan.coupons_allowed}
+    if not wanted:
+        return {}
+    now = datetime.now(UTC)
+    coupons = {
+        coupon.id: coupon
+        for coupon in (
+            await db.scalars(
+                select(Coupon).where(
+                    Coupon.application_id == application_id,
+                    Coupon.id.in_({plan.offer_coupon_id for plan in wanted.values()}),
+                    Coupon.kind == CouponKind.PROMOTION,
+                    Coupon.status.in_([CouponStatus.ACTIVE, CouponStatus.SCHEDULED]),
+                    Coupon.starts_at <= now,
+                    Coupon.ends_at > now,
+                    Coupon.redemption_count < Coupon.maximum_redemptions,
+                )
+            )
+        ).all()
+    }
+    scopes: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for coupon_id, plan_id in (
+        await db.execute(
+            select(CouponPlan.coupon_id, CouponPlan.plan_id).where(
+                CouponPlan.application_id == application_id,
+                CouponPlan.coupon_id.in_(list(coupons)),
+            )
+        )
+    ).all():
+        scopes.setdefault(coupon_id, set()).add(plan_id)
+    offers: dict[uuid.UUID, dict[str, Any]] = {}
+    for plan_id, plan in wanted.items():
+        coupon = coupons.get(plan.offer_coupon_id)  # type: ignore[arg-type]
+        if coupon is None or (coupon.id in scopes and plan_id not in scopes[coupon.id]):
+            continue
+        if coupon.discount_type.value == "fixed" and coupon.currency != plan.currency:
+            continue
+        offers[plan_id] = {
+            "code": coupon.code,
+            "label": coupon.name,
+            "discount_type": coupon.discount_type.value,
+            "discount_value": str(coupon.discount_value),
+            "ends_at": coupon.ends_at.isoformat(),
+            "first_subscription_only": coupon.first_subscription_only,
+        }
+    return offers
+
+
 @router.get("/subscription-catalog")
 async def subscription_catalog(
     authorization: IntegrationCredential, db: DatabaseSession, response: Response
@@ -308,6 +400,8 @@ async def subscription_catalog(
             .order_by(AppFeature.display_order, AppFeature.name)
         )
     ).all()
+    offers = await _live_offers(db, authorization.application_id, [plan for plan, _ in rows])
+    visuals = resolved_visuals([plan for plan, _ in rows], recommended)
     return {
         "contract_version": 1,
         "application_id": str(authorization.application_id),
@@ -327,6 +421,11 @@ async def subscription_catalog(
                 "badge": plan.badge,
                 "compare_at_price": str(plan.compare_at_price) if plan.compare_at_price else None,
                 "pricing_group": plan.pricing_group,
+                "highlights": list(plan.highlights or []),
+                "artwork": visuals[plan.id][0],
+                "accent": visuals[plan.id][1],
+                "coupons_allowed": plan.coupons_allowed,
+                "offer": offers.get(plan.id),
             }
             for plan, item in rows
         ],

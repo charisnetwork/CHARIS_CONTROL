@@ -1,5 +1,25 @@
 # Charis Control Centre working guide
 
+## Plan studio, plan cards and Civil free plan — 2026-10-27
+
+- OS: one Subscriptions menu (tabs Plans / Customers / Plan page); old Plans page and
+  Settings storefront removed (`/plans` redirects). Plan editor side panel with live
+  preview: name, price, period chips, detail lines, feature switches + limits, coupon
+  switch, featured offer, preset artwork/accent; code generated from the name.
+- Migration 20261027_0007: plan `highlights` (JSONB ≤12), `artwork`, `accent` (preset
+  check constraints) and `offer_coupon_id` (FK to same-app coupon). PATCH plan accepts
+  `entitlements` so plan + features save atomically. Offers must be live promotion
+  coupons (never partner codes); deleting a coupon clears offers; catalog sends an offer
+  only while redeemable and resolves "auto" visuals (`resolved_visuals`). Customer text
+  rejects `<`/`>`/control chars.
+- Civil: plan cards show artwork/accent/highlights and quote-verified offers; subscription
+  page rewritten (status first, one Refresh, no UUID/MiB); new companies claim the ₹0
+  plan after signup (`claimFreePlan`). Bill Easy: planView passes card fields; same cards.
+- Verified: OS 132 passed/1 skipped (real PG on throwaway 127.0.0.1:55449), ruff/mypy,
+  web tsc/eslint/build; Civil 49 tests, lint, build; Bill Easy 12 tests, build. Local
+  Docker stack rebuilt (backup in charis_deploy/backups); 12 OS API + 6 Civil browser
+  checks passed. Bill Easy cards not checked in a browser. No push/deploy.
+
 ## Bill Easy connected; coupons + free plans in customer checkout — 2026-10-20
 
 - Owner model confirmed: OS creates/edits plans, coupons, affiliates, notifications per app;

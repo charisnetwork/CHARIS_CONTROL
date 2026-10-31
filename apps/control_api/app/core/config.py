@@ -1,9 +1,24 @@
 import json
+import uuid
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, HttpUrl, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class ReportingAdapter(BaseModel):
+    base_url: HttpUrl
+    token: SecretStr = Field(min_length=32)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_url(cls, value: HttpUrl) -> HttpUrl:
+        if value.username or value.password or value.query or value.fragment:
+            raise ValueError("Reporting URL cannot contain credentials, query or fragment")
+        if value.scheme != "https" and value.host not in {"localhost", "127.0.0.1", "[::1]"}:
+            raise ValueError("Reporting requires HTTPS except for local QA")
+        return value
 
 
 class Settings(BaseSettings):
@@ -40,6 +55,7 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: SecretStr = SecretStr("")
     razorpay_webhook_secret: SecretStr = SecretStr("")
+    reporting_adapters: dict[uuid.UUID, ReportingAdapter] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_razorpay(self) -> "Settings":
@@ -82,6 +98,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_insecure_production_secrets(self) -> "Settings":
+        if self.environment.lower() == "production" and any(
+            item.base_url.scheme != "https" for item in self.reporting_adapters.values()
+        ):
+            raise ValueError("Production reporting requires HTTPS")
         if (
             self.environment.lower() == "production"
             and self.jwt_signing_secret.get_secret_value() == "development-only-change-me"

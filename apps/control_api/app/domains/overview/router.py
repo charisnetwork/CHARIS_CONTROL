@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.dependencies import AppAuthorization, DatabaseSession, require_app_permission
 from app.db.models import AppPermission
+from app.domains.overview.adapter import AppCustomers, AppSummary, fetch_report
 from app.domains.overview.schemas import ApplicationOverviewResponse, LatestHealth, OverviewCounts
 from app.domains.overview.service import overview_service
 
@@ -14,6 +15,31 @@ ViewOverview = Annotated[
     AppAuthorization,
     Depends(require_app_permission(AppPermission.VIEW_OVERVIEW)),
 ]
+ViewCustomers = Annotated[
+    AppAuthorization, Depends(require_app_permission(AppPermission.VIEW_SUBSCRIBERS))
+]
+
+
+@router.get("/application-summary", response_model=AppSummary)
+async def application_summary(authorization: ViewOverview, response: Response) -> AppSummary:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await fetch_report(authorization.application_id, "summary", AppSummary)
+
+
+@router.get("/application-customers", response_model=AppCustomers)
+async def application_customers(
+    authorization: ViewCustomers,
+    response: Response,
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=25, ge=1, le=100),
+    search: str = Query(default="", max_length=100),
+    status: Literal["active", "disabled"] | None = None,
+) -> AppCustomers:
+    response.headers["Cache-Control"] = "private, no-store"
+    params = {"page": str(page), "page_size": str(page_size), "search": search}
+    if status is not None:
+        params["status"] = status
+    return await fetch_report(authorization.application_id, "customers", AppCustomers, params)
 
 
 @router.get("", response_model=ApplicationOverviewResponse)

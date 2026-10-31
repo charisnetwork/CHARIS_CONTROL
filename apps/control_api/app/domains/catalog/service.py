@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -12,7 +13,10 @@ from app.api.dependencies import AuthenticatedUser
 from app.db.models import (
     AppFeature,
     AuditLog,
+    Coupon,
+    CouponKind,
     CouponPlan,
+    CouponStatus,
     LimitType,
     NotificationPlanAudience,
     PlanEntitlement,
@@ -21,6 +25,7 @@ from app.db.models import (
     PlanUiItem,
     Subscription,
     SubscriptionPlan,
+    ValueType,
     WebhookEvent,
 )
 from app.domains.catalog.schemas import (
@@ -201,11 +206,14 @@ class CatalogService:
         await self._validated_features(
             db, application_id=application_id, entitlements=payload.entitlements
         )
+        code = payload.code or await self._unique_plan_code(
+            db, application_id=application_id, name=payload.name
+        )
         plan = SubscriptionPlan(
             id=uuid.uuid4(),
             application_id=application_id,
             name=payload.name,
-            code=payload.code,
+            code=code,
             description=payload.description,
             price=payload.price,
             currency=payload.currency,
@@ -220,7 +228,12 @@ class CatalogService:
             badge=payload.badge,
             compare_at_price=payload.compare_at_price,
             pricing_group=payload.pricing_group,
+            highlights=payload.highlights,
+            artwork=payload.artwork,
+            accent=payload.accent,
+            offer_coupon_id=payload.offer_coupon_id,
         )
+        await self._validate_offer(db, plan=plan, scoped_to_plan=False)
         entitlement_models = self._entitlement_models(
             application_id=application_id,
             plan_id=plan.id,
@@ -384,8 +397,19 @@ class CatalogService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Archived plans cannot be edited"
             )
-        changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
-        for field in ("name", "price", "duration_value", "duration_unit", "coupons_allowed"):
+        changes = payload.model_dump(
+            exclude_unset=True, exclude={"expected_version", "entitlements"}
+        )
+        for field in (
+            "name",
+            "price",
+            "duration_value",
+            "duration_unit",
+            "coupons_allowed",
+            "highlights",
+            "artwork",
+            "accent",
+        ):
             if field in changes and changes[field] is None:
                 raise HTTPException(status_code=422, detail=f"{field} cannot be empty")
         if "user_limit" in changes or "user_limit_unlimited" in changes:
@@ -401,7 +425,12 @@ class CatalogService:
         effective_at = changes.get("effective_at", plan.effective_at)
         if new_status == PlanStatus.ACTIVE and effective_at is None:
             raise HTTPException(status_code=422, detail="Active plans require effective_at")
-        before = {"price": str(plan.price), "status": plan.status.value, "name": plan.name}
+        before = {
+            "price": str(plan.price),
+            "status": plan.status.value,
+            "name": plan.name,
+            "offer_coupon_id": str(plan.offer_coupon_id) if plan.offer_coupon_id else None,
+        }
         for field, value in changes.items():
             setattr(plan, field, value)
         if plan.compare_at_price is not None and plan.compare_at_price <= plan.price:
@@ -411,7 +440,27 @@ class CatalogService:
             )
         if new_status == PlanStatus.ARCHIVED:
             plan.archived_at = datetime.now(UTC)
+            plan.offer_coupon_id = None
             await self._hide_from_storefront(db, application_id=application_id, plan_id=plan_id)
+        elif {"offer_coupon_id", "coupons_allowed", "price"} & set(changes):
+            await self._validate_offer(db, plan=plan, scoped_to_plan=True)
+        if payload.entitlements is not None:
+            # Same transaction as the edit: a plan is never left half-saved.
+            await self._validated_features(
+                db, application_id=application_id, entitlements=payload.entitlements
+            )
+            await db.execute(
+                delete(PlanEntitlement).where(
+                    PlanEntitlement.application_id == application_id,
+                    PlanEntitlement.plan_id == plan_id,
+                )
+            )
+            db.add_all(
+                self._entitlement_models(
+                    application_id=application_id, plan_id=plan_id, payloads=payload.entitlements
+                )
+            )
+            changes["entitlements"] = len(payload.entitlements)
         plan.version += 1
         db.add_all(
             [
@@ -563,6 +612,77 @@ class CatalogService:
         )
         await db.commit()
         return plan, entitlements
+
+    async def _unique_plan_code(
+        self, db: AsyncSession, *, application_id: uuid.UUID, name: str
+    ) -> str:
+        base = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")[:90] or "plan"
+        if not base[0].isalpha():
+            base = f"plan_{base}"[:90]
+        taken = set(
+            (
+                await db.scalars(
+                    select(SubscriptionPlan.code).where(
+                        SubscriptionPlan.application_id == application_id,
+                        SubscriptionPlan.code.like(f"{base}%"),
+                    )
+                )
+            ).all()
+        )
+        if base not in taken:
+            return base
+        suffix = 2
+        while f"{base}_{suffix}" in taken:
+            suffix += 1
+        return f"{base}_{suffix}"
+
+    async def _validate_offer(
+        self, db: AsyncSession, *, plan: SubscriptionPlan, scoped_to_plan: bool
+    ) -> None:
+        """An advertised offer must be a live promotion coupon this plan's checkout accepts.
+
+        Checkout re-validates the coupon independently; this only stops OS from advertising
+        a code the customer could not use. Partner (affiliate) codes are never advertised,
+        so commissions are only paid for real referrals.
+        """
+        if plan.offer_coupon_id is None:
+            return
+
+        def reject(detail: str) -> HTTPException:
+            return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+
+        if not plan.coupons_allowed:
+            raise reject("Turn on coupons for this plan before attaching an offer")
+        coupon = await db.scalar(
+            select(Coupon).where(
+                Coupon.id == plan.offer_coupon_id,
+                Coupon.application_id == plan.application_id,
+            )
+        )
+        if coupon is None:
+            raise reject("The offer coupon does not belong to this application")
+        if coupon.kind != CouponKind.PROMOTION:
+            raise reject("Only promotion coupons can be advertised; partner codes stay private")
+        if coupon.status not in {CouponStatus.ACTIVE, CouponStatus.SCHEDULED} or (
+            coupon.ends_at <= datetime.now(UTC)
+        ):
+            raise reject("The offer coupon is disabled or has ended")
+        if coupon.redemption_count >= coupon.maximum_redemptions:
+            raise reject("The offer coupon has no redemptions left")
+        if coupon.discount_type == ValueType.FIXED and coupon.currency != plan.currency:
+            raise reject("The offer coupon's currency does not match the plan")
+        scoped = list(
+            (
+                await db.scalars(
+                    select(CouponPlan.plan_id).where(
+                        CouponPlan.application_id == plan.application_id,
+                        CouponPlan.coupon_id == coupon.id,
+                    )
+                )
+            ).all()
+        )
+        if scoped and (not scoped_to_plan or plan.id not in scoped):
+            raise reject("The offer coupon is limited to other plans")
 
     async def _validated_features(
         self,

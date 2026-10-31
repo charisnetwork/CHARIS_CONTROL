@@ -15,9 +15,8 @@ import { Coupons } from './pages/applications/Coupons';
 import { Notifications } from './pages/applications/Notifications';
 import { Reports } from './pages/applications/Reports';
 import { Settings } from './pages/applications/Settings';
-import { PlansCatalog } from './pages/applications/PlansCatalog';
 import { Users } from './pages/applications/Users';
-import { Subscriptions } from './pages/applications/Subscriptions';
+import { SubscriptionsHub } from './pages/applications/subscriptions/SubscriptionsHub';
 import Login from './pages/auth/Login';
 import { listApplications, restoreSession } from './services/controlApi';
 import { useAuthStore } from './store/authStore';
@@ -77,8 +76,8 @@ const router = createBrowserRouter([
               { path: 'overview', element: <ApplicationOverview /> },
               { path: 'users', element: <Users /> },
               { path: 'subscribers', element: <Navigate to="../users" replace /> },
-              { path: 'subscriptions', element: <Subscriptions /> },
-              { path: 'plans', element: <PlansCatalog /> },
+              { path: 'subscriptions', element: <SubscriptionsHub /> },
+              { path: 'plans', element: <Navigate to="../subscriptions" replace /> },
               { path: 'coupons', element: <Coupons /> },
               { path: 'affiliates', element: <Affiliates /> },
               { path: 'notifications', element: <Notifications /> },

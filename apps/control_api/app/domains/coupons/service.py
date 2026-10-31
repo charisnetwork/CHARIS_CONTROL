@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -360,6 +360,15 @@ class CouponService:
             delete(CouponPlan).where(
                 CouponPlan.application_id == application_id, CouponPlan.coupon_id == coupon.id
             )
+        )
+        # Plans advertising this coupon simply stop showing the offer.
+        await db.execute(
+            update(SubscriptionPlan)
+            .where(
+                SubscriptionPlan.application_id == application_id,
+                SubscriptionPlan.offer_coupon_id == coupon.id,
+            )
+            .values(offer_coupon_id=None, version=SubscriptionPlan.version + 1)
         )
         await db.delete(coupon)
         db.add_all(

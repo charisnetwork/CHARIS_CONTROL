@@ -201,15 +201,27 @@ export interface SubscriptionPlan {
   badge: string | null;
   compare_at_price: string | null;
   pricing_group: string | null;
+  highlights: string[];
+  artwork: PlanArtwork;
+  accent: PlanAccent;
+  offer_coupon_id: string | null;
   version: number;
   entitlements: PlanEntitlement[];
 }
+
+/** Preset keys only: every app ships its own matching illustration and colours. */
+export type PlanArtwork = 'auto' | 'none' | 'rocket' | 'crown' | 'gem' | 'leaf' | 'shield' | 'building' | 'sparkles' | 'gift';
+export type PlanAccent = 'auto' | 'blue' | 'violet' | 'emerald' | 'amber' | 'rose' | 'slate';
 
 export interface PlanPresentation {
   tagline?: string | null;
   badge?: string | null;
   compare_at_price?: string | null;
   pricing_group?: string | null;
+  highlights?: string[];
+  artwork?: PlanArtwork;
+  accent?: PlanAccent;
+  offer_coupon_id?: string | null;
 }
 
 export interface EntitlementPayload {
@@ -223,10 +235,11 @@ export interface EntitlementPayload {
 
 export interface CreatePlanPayload extends PlanPresentation {
   name: string;
-  code: string;
+  /** Generated from the name when omitted. */
+  code?: string;
   description?: string;
   price: string;
-  currency: string;
+  currency?: string;
   duration_value: number;
   duration_unit: 'day' | 'month' | 'year';
   coupons_allowed: boolean;
@@ -283,6 +296,8 @@ export interface UpdatePlanPayload extends PlanPresentation {
   coupons_allowed?: boolean;
   status?: 'draft' | 'active' | 'archived';
   effective_at?: string;
+  /** Replaces the plan's features in the same save. */
+  entitlements?: EntitlementPayload[];
 }
 
 export async function updatePlan(applicationId: string, planId: string, payload: UpdatePlanPayload): Promise<SubscriptionPlan> {

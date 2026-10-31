@@ -8,7 +8,7 @@ import { RazorpayPanel } from './RazorpayPanel';
 
 const emptyForm = { subscriber_id: '', plan_id: '', external_id: '', coupon_code: '', auto_renews: false };
 
-export function Subscriptions() {
+export function Subscriptions({ embedded = false }: { embedded?: boolean }) {
   const application = useProductStore((state) => state.selectedProduct);
   const isOwner = useAuthStore((state) => state.user?.role === 'owner');
   const queryClient = useQueryClient();
@@ -44,8 +44,8 @@ export function Subscriptions() {
   const subscriberNames = new Map(subscribers.data?.map((item) => [item.id, item.name]) ?? []);
   const submit = (event: FormEvent) => { event.preventDefault(); mutation.mutate(); };
 
-  return <div className="mx-auto max-w-6xl space-y-6">
-    <header className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-400">{application.displayName}</p><h1 className="mt-2 text-3xl font-bold">Subscriptions</h1><p className="mt-2 text-slate-400">Immutable commercial and entitlement snapshots for this application.</p></div>{isOwner && <button onClick={() => setShowForm(true)} disabled={!subscribers.data?.length || !activePlans.length} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40"><Plus className="mr-2 inline h-4 w-4" />Assign plan</button>}</header>
+  return <div className={embedded ? 'space-y-6' : 'mx-auto max-w-6xl space-y-6'}>
+    <header className="flex items-end justify-between gap-4">{embedded ? <p className="text-sm text-slate-400">Every customer's plan, price paid and term. Changes here are support actions, not payments.</p> : <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-400">{application.displayName}</p><h1 className="mt-2 text-3xl font-bold">Subscriptions</h1><p className="mt-2 text-slate-400">Immutable commercial and entitlement snapshots for this application.</p></div>}{isOwner && <button onClick={() => setShowForm(true)} disabled={!subscribers.data?.length || !activePlans.length} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40"><Plus className="mr-2 inline h-4 w-4" />Assign plan</button>}</header>
     <p className="rounded-xl border border-slate-700 p-4 text-sm text-slate-400">Customers buy inside the selected product app. Verified payments create and activate subscriptions automatically here. Manual assignment is an internal support override, not the normal purchase flow, and does not record collected money.</p>
     {subscriptions.isError && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-300">Unable to load scoped subscriptions.</div>}
     {isOwner && <RazorpayPanel key={application.id} applicationId={application.id} subscribers={subscribers.data ?? []} plans={plans.data ?? []} subscriptions={subscriptions.data ?? []} />}

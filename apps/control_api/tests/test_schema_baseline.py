@@ -57,6 +57,12 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
     specification.loader.exec_module(user_directory)
     for name, _ in user_directory.COLUMNS:
         baseline.metadata.tables["subscribers"].append_column(Column(name, String()))
+    # 20261027_0007 adds plan card content and the advertised offer coupon.
+    assert (
+        Path(__file__).parents[1] / "alembic/versions/20261027_0007_plan_card_content.py"
+    ).exists()
+    for name in ("highlights", "artwork", "accent", "offer_coupon_id"):
+        baseline.metadata.tables["subscription_plans"].append_column(Column(name, String()))
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

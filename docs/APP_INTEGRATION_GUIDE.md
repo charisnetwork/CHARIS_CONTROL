@@ -174,10 +174,28 @@ Coupon use is reserved when the order is created; partner commission is earned o
 payment is verified and reversed on full refund. Unpaid orders expire after 24 h and release
 the coupon. Changing plan starts a new full term immediately (no proration).
 
+### Plan card content (catalog, contract 1, additive)
+
+Each plan in `GET subscription-catalog` also carries:
+
+| Field | Meaning | App must |
+| --- | --- | --- |
+| `highlights` | Up to 12 selling points, plain text (no `<` `>`), one per line | Render as text, never as HTML |
+| `artwork` | Preset: `rocket` `crown` `gem` `leaf` `shield` `building` `sparkles` `gift` `none` ("auto" is already resolved by OS) | Map to its own bundled illustration; unknown value → default |
+| `accent` | Preset: `blue` `violet` `emerald` `amber` `rose` `slate` | Map to its own colours; unknown value → default |
+| `coupons_allowed` | `false` → hide the coupon box | Respect it (checkout rejects coupons anyway) |
+| `offer` | `{code, label, discount_type, discount_value, ends_at, first_subscription_only}` or `null`; only live promotion coupons | Quote it first (`POST quote` with the code) and show the offer price **only if the quote succeeds**; pay with the quoted code |
+
+OS never sends colours, images or URLs, so apps keep their own design and CSP. Reference
+implementations: Civil `apps/web/src/components/PlanArtwork.tsx`, Bill Easy
+`frontend/src/components/PlanArtwork.jsx`.
+
 ## 8. What OS administrators can change
 
-Plans: create, edit (applies to new purchases; existing customers keep their frozen terms),
-archive, delete (only if never used). Coupons: create, edit, enable/disable, delete (only if
+Plans (Subscriptions → Plans: name, price, period, detail lines, feature switches, limits,
+coupon switch, featured offer, picture and colour; saved in one transaction): create, edit
+(applies to new purchases; existing customers keep their frozen terms), duplicate, archive,
+delete (only if never used). Subscriptions → Plan page: visibility, order, recommended plan. Coupons: create, edit, enable/disable, delete (only if
 unused; discount fixed after first use). Partners: create, edit, disable, archive, record
 payouts. Subscriptions (support): assign, suspend, resume, cancel, renew/replace.
 

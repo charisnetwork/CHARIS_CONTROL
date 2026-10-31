@@ -385,8 +385,41 @@ class SubscriptionPlan(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionM
     badge: Mapped[str | None] = mapped_column(String(40))
     compare_at_price: Mapped[Decimal | None] = mapped_column(Numeric(19, 4))
     pricing_group: Mapped[str | None] = mapped_column(String(100))
+    # Customer-facing selling points, one per line. artwork/accent are preset keys the
+    # apps map to their own built-in illustrations, never URLs.
+    highlights: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    artwork: Mapped[str] = mapped_column(String(32), nullable=False, default="auto")
+    accent: Mapped[str] = mapped_column(String(16), nullable=False, default="auto")
+    # A promotion coupon advertised on the plan card and pre-filled at checkout.
+    offer_coupon_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["offer_coupon_id", "application_id"],
+            ["coupons.id", "coupons.application_id"],
+            ondelete="RESTRICT",
+            name="fk_subscription_plans_offer_coupon_app",
+        ),
+        Index(
+            "ix_subscription_plans_offer_coupon",
+            "offer_coupon_id",
+            postgresql_where=sql_text("offer_coupon_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "jsonb_typeof(highlights) = 'array' AND jsonb_array_length(highlights) <= 12",
+            name="plan_highlights_array",
+        ),
+        CheckConstraint(
+            "artwork IN ('auto', 'none', 'rocket', 'crown', 'gem', 'leaf', 'shield', 'building',"
+            " 'sparkles', 'gift')",
+            name="plan_artwork_preset",
+        ),
+        CheckConstraint(
+            "accent IN ('auto', 'blue', 'violet', 'emerald', 'amber', 'rose', 'slate')",
+            name="plan_accent_preset",
+        ),
         UniqueConstraint("application_id", "name", name="uq_subscription_plans_app_name"),
         CheckConstraint(
             "compare_at_price IS NULL OR compare_at_price > price",

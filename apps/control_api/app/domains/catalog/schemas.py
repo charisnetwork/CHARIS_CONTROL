@@ -11,6 +11,36 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.db.models import DurationUnit, LimitType, PlanStatus, ResetPeriod
 
 CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,99}$")
+# Customer-facing text is shown inside other apps (web pages, PDFs, emails). Keep it plain:
+# no markup characters and no control characters other than a newline.
+UNSAFE_TEXT = re.compile(r"[<>\x00-\x09\x0b-\x1f\x7f]")
+Artwork = Literal[
+    "auto", "none", "rocket", "crown", "gem", "leaf", "shield", "building", "sparkles", "gift"
+]
+Accent = Literal["auto", "blue", "violet", "emerald", "amber", "rose", "slate"]
+MAX_HIGHLIGHTS = 12
+
+
+def plain_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if UNSAFE_TEXT.search(value):
+        raise ValueError("text cannot contain < > or control characters")
+    return value
+
+
+def clean_highlights(value: list[str]) -> list[str]:
+    lines = [" ".join(line.split()) for line in value]
+    lines = [line for line in lines if line]
+    if len(lines) > MAX_HIGHLIGHTS:
+        raise ValueError(f"a plan can have at most {MAX_HIGHLIGHTS} highlight lines")
+    for line in lines:
+        if len(line) > 120:
+            raise ValueError("each highlight line must be 120 characters or fewer")
+        plain_text(line)
+    if len({line.casefold() for line in lines}) != len(lines):
+        raise ValueError("highlight lines must not repeat")
+    return lines
 
 
 class FeatureCreate(BaseModel):
@@ -153,10 +183,11 @@ class PlanCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=2, max_length=160)
-    code: str = Field(min_length=2, max_length=100)
+    # Optional: generated from the name when omitted.
+    code: str | None = Field(default=None, min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=4000)
     price: Decimal = Field(ge=0, max_digits=19, decimal_places=4)
-    currency: str = Field(min_length=3, max_length=3)
+    currency: str = Field(default="INR", min_length=3, max_length=3)
     duration_value: int = Field(gt=0, le=1200)
     duration_unit: DurationUnit
     coupons_allowed: bool = True
@@ -168,19 +199,36 @@ class PlanCreate(BaseModel):
     badge: str | None = Field(default=None, max_length=40)
     compare_at_price: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
     pricing_group: str | None = Field(default=None, max_length=100)
+    highlights: list[str] = Field(default_factory=list, max_length=MAX_HIGHLIGHTS * 2)
+    artwork: Artwork = "auto"
+    accent: Accent = "auto"
+    offer_coupon_id: uuid.UUID | None = None
     entitlements: list[EntitlementInput] = Field(default_factory=list)
 
     @field_validator("code", mode="before")
     @classmethod
     def normalize_code(cls, value: object) -> object:
-        return value.strip().casefold().replace("-", "_") if isinstance(value, str) else value
+        if isinstance(value, str):
+            value = value.strip().casefold().replace("-", "_")
+            return value or None
+        return value
 
     @field_validator("code")
     @classmethod
-    def validate_code(cls, value: str) -> str:
-        if not CODE_PATTERN.fullmatch(value):
+    def validate_code(cls, value: str | None) -> str | None:
+        if value is not None and not CODE_PATTERN.fullmatch(value):
             raise ValueError("code must use lowercase letters, numbers, and underscores")
         return value
+
+    @field_validator("name", "description", "tagline", "badge", "pricing_group")
+    @classmethod
+    def validate_text(cls, value: str | None) -> str | None:
+        return plain_text(value)
+
+    @field_validator("highlights")
+    @classmethod
+    def validate_highlights(cls, value: list[str]) -> list[str]:
+        return clean_highlights(value)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -226,6 +274,22 @@ class PlanUpdate(BaseModel):
     badge: str | None = Field(default=None, max_length=40)
     compare_at_price: Decimal | None = Field(default=None, gt=0, max_digits=19, decimal_places=4)
     pricing_group: str | None = Field(default=None, max_length=100)
+    highlights: list[str] | None = Field(default=None, max_length=MAX_HIGHLIGHTS * 2)
+    artwork: Artwork | None = None
+    accent: Accent | None = None
+    offer_coupon_id: uuid.UUID | None = None
+    # When present, the plan's features are replaced in the same transaction as the edit.
+    entitlements: list[EntitlementInput] | None = None
+
+    @field_validator("name", "description", "tagline", "badge", "pricing_group")
+    @classmethod
+    def validate_text(cls, value: str | None) -> str | None:
+        return plain_text(value)
+
+    @field_validator("highlights")
+    @classmethod
+    def validate_highlights(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else clean_highlights(value)
 
     @model_validator(mode="after")
     def validate_update(self) -> Self:
@@ -233,6 +297,10 @@ class PlanUpdate(BaseModel):
             raise ValueError("effective_at must include a timezone")
         if self.user_limit is not None and self.user_limit_unlimited:
             raise ValueError("define either a limited user_limit or user_limit_unlimited")
+        if self.entitlements is not None:
+            feature_ids = [item.feature_id for item in self.entitlements]
+            if len(feature_ids) != len(set(feature_ids)):
+                raise ValueError("each feature may appear only once per plan")
         return self
 
 
@@ -258,6 +326,10 @@ class PlanRead(BaseModel):
     badge: str | None = None
     compare_at_price: Decimal | None = None
     pricing_group: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+    artwork: str = "auto"
+    accent: str = "auto"
+    offer_coupon_id: uuid.UUID | None = None
     version: int
     created_at: datetime
     updated_at: datetime
