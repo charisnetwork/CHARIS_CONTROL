@@ -1,13 +1,15 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Copy, Package, Plus, Server, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, Package, Pencil, Plus, Server, Trash2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
+  archiveApplication,
   createApplication,
   listApplications,
   type CreateApplicationPayload,
   type IssuedCredential,
 } from '../../services/controlApi';
+import type { Product } from '../../store/productStore';
 import { useAuthStore } from '../../store/authStore';
 
 const initialForm: CreateApplicationPayload = {
@@ -36,6 +38,28 @@ export function ApplicationSelection() {
       await queryClient.invalidateQueries({ queryKey: ['applications'] });
     },
   });
+
+  // Edit and delete: buttons on each card, or right-click a card. Owners only.
+  const [menu, setMenu] = useState<{ application: Product; x: number; y: number } | null>(null);
+  const [deleting, setDeleting] = useState<Product | null>(null);
+  const [confirmName, setConfirmName] = useState('');
+  const deleteMutation = useMutation({
+    mutationFn: (application: Product) => archiveApplication(application.id),
+    onSuccess: async () => {
+      setDeleting(null);
+      setConfirmName('');
+      await queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+  useEffect(() => {
+    if (!menu) return undefined;
+    const close = () => setMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, [menu]);
+  const edit = (application: Product) => navigate(`/apps/${application.id}/settings`);
+  const askDelete = (application: Product) => { deleteMutation.reset(); setConfirmName(''); setDeleting(application); };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -66,10 +90,24 @@ export function ApplicationSelection() {
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {applications.data?.map((application) => (
-            <button key={application.id} onClick={() => navigate(`/apps/${application.id}/overview`)} className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left shadow-xl shadow-black/10 transition hover:-translate-y-1 hover:border-blue-500/50">
-              <div className="mb-7 flex items-start justify-between">
+            <div
+              key={application.id}
+              role="link"
+              tabIndex={0}
+              onClick={() => navigate(`/apps/${application.id}/overview`)}
+              onKeyDown={(event) => { if (event.key === 'Enter') navigate(`/apps/${application.id}/overview`); }}
+              onContextMenu={(event) => { if (!isOwner) return; event.preventDefault(); setMenu({ application, x: event.clientX, y: event.clientY }); }}
+              className="group cursor-pointer rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left shadow-xl shadow-black/10 outline-none transition hover:-translate-y-1 hover:border-blue-500/50 focus-visible:border-blue-500"
+            >
+              <div className="mb-7 flex items-start justify-between gap-3">
                 <span className="grid h-12 w-12 place-items-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400"><Package className="h-6 w-6" /></span>
-                <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{application.environment}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">{application.environment}</span>
+                  {isOwner && (<>
+                    <button type="button" title="Edit application" aria-label={`Edit ${application.displayName}`} onClick={(event) => { event.stopPropagation(); edit(application); }} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"><Pencil className="h-4 w-4" /></button>
+                    <button type="button" title="Delete application" aria-label={`Delete ${application.displayName}`} onClick={(event) => { event.stopPropagation(); askDelete(application); }} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/10 hover:text-red-300"><Trash2 className="h-4 w-4" /></button>
+                  </>)}
+                </div>
               </div>
               <h2 className="text-xl font-semibold group-hover:text-blue-300">{application.displayName}</h2>
               <p className="mt-1 font-mono text-xs text-slate-500">{application.productName}</p>
@@ -77,7 +115,7 @@ export function ApplicationSelection() {
                 <span className="flex min-w-0 items-center gap-2"><Server className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{new URL(application.apiBaseUrl).host}</span></span>
                 <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -95,6 +133,34 @@ export function ApplicationSelection() {
             </div>
             {createMutation.isError && <p className="mt-4 text-sm text-red-300">Unable to register this application. Verify the URL, slug, and your permissions.</p>}
             <button disabled={createMutation.isPending} className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold hover:bg-blue-500 disabled:opacity-50">{createMutation.isPending ? 'Registering…' : 'Register application'}</button>
+          </form>
+        </div>
+      )}
+
+      {menu && (
+        <div role="menu" style={{ top: menu.y, left: menu.x }} className="fixed z-50 w-44 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 py-1 text-sm shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <button role="menuitem" onClick={() => { setMenu(null); edit(menu.application); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-200 hover:bg-slate-800"><Pencil className="h-4 w-4" />Edit</button>
+          <button role="menuitem" onClick={() => { setMenu(null); askDelete(menu.application); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-300 hover:bg-red-500/10"><Trash2 className="h-4 w-4" />Delete</button>
+        </div>
+      )}
+
+      {deleting && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm">
+          <form onSubmit={(event) => { event.preventDefault(); deleteMutation.mutate(deleting); }} className="w-full max-w-lg rounded-2xl border border-red-500/30 bg-slate-900 p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Delete {deleting.displayName}?</h2><button type="button" onClick={() => setDeleting(null)} aria-label="Close"><X className="h-5 w-5 text-slate-400" /></button></div>
+            <ul className="list-disc space-y-1.5 pl-5 text-sm text-slate-300">
+              <li>It disappears from Control Centre and its integration keys stop working at once.</li>
+              <li>If the app is still live, its users can no longer check or buy plans until it is connected to Control Centre again.</li>
+              <li>Its subscribers, payments and audit history are kept for your records; they are not erased.</li>
+            </ul>
+            <label className="mt-5 block text-sm text-slate-300">Type <span className="font-mono text-white">{deleting.displayName}</span> to confirm
+              <input autoFocus value={confirmName} onChange={(event) => setConfirmName(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-red-500" />
+            </label>
+            {deleteMutation.isError && <p className="mt-3 text-sm text-red-300">Could not delete this application. Only an Owner can delete applications.</p>}
+            <div className="mt-6 flex gap-3">
+              <button type="button" onClick={() => setDeleting(null)} className="flex-1 rounded-lg border border-slate-700 px-4 py-2.5 text-sm">Cancel</button>
+              <button disabled={confirmName.trim() !== deleting.displayName || deleteMutation.isPending} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold hover:bg-red-500 disabled:opacity-40">{deleteMutation.isPending ? 'Deleting…' : 'Delete application'}</button>
+            </div>
           </form>
         </div>
       )}

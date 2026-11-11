@@ -145,6 +145,11 @@ export async function createApplication(payload: CreateApplicationPayload) {
   return { application: mapApplication(data.application), credential: data.credential };
 }
 
+/** Removes an application from the registry: its keys stop working; its records are kept. Owner only. */
+export async function archiveApplication(applicationId: string) {
+  await controlApi.post(`/apps/${applicationId}/archive`);
+}
+
 export async function getApplicationOverview(applicationId: string) {
   const { data } = await controlApi.get<ApplicationOverviewData>(
     `/apps/${applicationId}/overview`,
