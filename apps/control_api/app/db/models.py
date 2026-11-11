@@ -84,6 +84,8 @@ class ResetPeriod(enum.StrEnum):
     TOTAL = "total"
     DAILY = "daily"
     MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    HALF_YEARLY = "half_yearly"
     YEARLY = "yearly"
     BILLING_CYCLE = "billing_cycle"
 

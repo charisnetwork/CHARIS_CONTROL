@@ -65,6 +65,14 @@ class FeatureCreate(BaseModel):
             raise ValueError("code must use lowercase letters, numbers, and underscores")
         return value
 
+    @field_validator("default_unit")
+    @classmethod
+    def validate_unit(cls, value: str | None) -> str | None:
+        # A unit names what is counted ("projects", "GB"); a bare number like "5" is a typo.
+        if value is not None and not any(character.isalpha() for character in value):
+            raise ValueError("unit must be a word such as projects or photos, not a number")
+        return value
+
     @model_validator(mode="after")
     def validate_limit_capability(self) -> Self:
         if not self.supports_numeric_limit and (self.default_unit or self.allowed_reset_periods):

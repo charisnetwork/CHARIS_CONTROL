@@ -73,7 +73,9 @@ export function resolveVisuals(plan: VisualPlan, others: VisualPlan[], recommend
 }
 
 export type Unit = 'day' | 'month' | 'year';
-export const RESET_LABEL: Record<ResetPeriod, string> = { total: 'in total', daily: 'per day', monthly: 'per month', yearly: 'per year', billing_cycle: 'per billing cycle' };
+export const RESET_LABEL: Record<ResetPeriod, string> = { total: 'in total', daily: 'per day', monthly: 'per month', quarterly: 'per 3 months', half_yearly: 'per 6 months', yearly: 'per year', billing_cycle: 'per billing cycle' };
+/** Wording in the period picker: "in total" reads as a fixed limit that never resets. */
+export const RESET_OPTION_LABEL: Record<ResetPeriod, string> = { ...RESET_LABEL, total: 'fixed (never resets)' };
 
 export type Draft = {
   name: string; price: string; duration_value: number; duration_unit: Unit; compare_at_price: string;
@@ -97,6 +99,8 @@ export function draftFrom(plan: SubscriptionPlan | null, copy = false): Draft {
 }
 
 const BYTE_UNITS = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+export const MB = 1024 ** 2;
+export const GB = 1024 ** 3;
 
 /** "50 invoices per month", "1 business in total", "5 GB in total". */
 export function limitAmount(value: number, unit: string | null | undefined) {
@@ -105,6 +109,7 @@ export function limitAmount(value: number, unit: string | null | undefined) {
     while (size >= 1024 && step < BYTE_UNITS.length - 1) { size /= 1024; step += 1; }
     return `${Number(size.toFixed(size % 1 ? 1 : 0)).toLocaleString('en-IN')} ${BYTE_UNITS[step]}`;
   }
+  if (unit && !/[a-z]/i.test(unit)) unit = ''; // a number typed as the unit ("5") is not shown
   const label = value === 1 && unit?.endsWith('es') && /(s|x|z|ch|sh)es$/.test(unit) ? unit.slice(0, -2) : value === 1 && unit?.endsWith('s') ? unit.slice(0, -1) : unit ?? '';
   return `${value.toLocaleString('en-IN')} ${label}`.trim();
 }

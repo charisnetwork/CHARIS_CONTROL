@@ -63,6 +63,12 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
     ).exists()
     for name in ("highlights", "artwork", "accent", "offer_coupon_id"):
         baseline.metadata.tables["subscription_plans"].append_column(Column(name, String()))
+    # 20261111_0008 adds the quarterly and half-yearly reset periods after monthly.
+    assert (
+        Path(__file__).parents[1]
+        / "alembic/versions/20261111_0008_quarterly_half_yearly_limits.py"
+    ).exists()
+    added_enum_values = {"reset_period": ["quarterly", "half_yearly"]}
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 
@@ -71,10 +77,10 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
         assert set(model_table.columns.keys()) == set(migration_tables[table_name].columns.keys())
         for column in model_table.columns:
             if isinstance(column.type, Enum):
-                assert (
-                    column.type.enums
-                    == migration_tables[table_name].columns[column.name].type.enums
-                )
+                expected = list(migration_tables[table_name].columns[column.name].type.enums)
+                for value in reversed(added_enum_values.get(column.type.name or "", [])):
+                    expected.insert(expected.index("monthly") + 1, value)
+                assert column.type.enums == expected
 
 
 def test_webhook_delivery_foreign_keys_are_application_scoped() -> None:

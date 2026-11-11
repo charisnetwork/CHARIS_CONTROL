@@ -157,7 +157,7 @@ export async function getApplicationOverview(applicationId: string) {
   return data;
 }
 
-export type ResetPeriod = 'total' | 'daily' | 'monthly' | 'yearly' | 'billing_cycle';
+export type ResetPeriod = 'total' | 'daily' | 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'billing_cycle';
 
 export interface AppFeature {
   id: string;

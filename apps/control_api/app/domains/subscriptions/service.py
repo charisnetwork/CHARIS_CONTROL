@@ -64,6 +64,12 @@ def _period_bounds(
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         days = monthrange(start.year, start.month)[1]
         return start, start + timedelta(days=days)
+    if period.value in {"quarterly", "half_yearly"}:
+        # Calendar quarters (Jan, Apr, Jul, Oct) and halves (Jan, Jul).
+        months = 3 if period.value == "quarterly" else 6
+        first_month = (now.month - 1) // months * months + 1
+        start = now.replace(month=first_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return start, start + relativedelta(months=months)
     start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     return start, start + relativedelta(years=1)
 

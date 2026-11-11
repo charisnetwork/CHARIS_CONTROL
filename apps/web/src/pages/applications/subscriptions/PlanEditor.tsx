@@ -17,7 +17,7 @@ import {
 import { Toggle } from '../../../components/Toggle';
 import { PlanCard } from './PlanCard';
 import { PlanArtworkImage } from './planVisuals';
-import { ACCENTS, ARTWORK_OPTIONS, RESET_LABEL, cardOffer, draftFrom, featureDetail, groupFeatures, resolveVisuals, type CardFeature, type Draft, type Unit } from './planModel';
+import { ACCENTS, ARTWORK_OPTIONS, GB, MB, RESET_LABEL, RESET_OPTION_LABEL, cardOffer, draftFrom, featureDetail, groupFeatures, resolveVisuals, type CardFeature, type Draft, type Unit } from './planModel';
 
 
 const PERIODS: Array<{ key: string; label: string; value: number; unit: Unit }> = [
@@ -27,6 +27,17 @@ const PERIODS: Array<{ key: string; label: string; value: number; unit: Unit }> 
   { key: '1-year', label: 'Yearly', value: 1, unit: 'year' },
 ];
 const field = 'mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-900/70 px-3.5 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
+/** Storage limits are stored in bytes; owners enter them in MB or GB. */
+function ByteLimit({ label, bytes, onChange }: { label: string; bytes: number | null | undefined; onChange: (bytes: number) => void }) {
+  const [unit, setUnit] = useState<'MB' | 'GB'>(() => (bytes && bytes % GB !== 0 ? 'MB' : 'GB'));
+  const size = unit === 'GB' ? GB : MB;
+  const amount = bytes ? Math.round((bytes / size) * 100) / 100 : '';
+  return <span className="inline-flex items-center gap-1.5">
+    <input type="number" min={1} step="any" value={amount} onChange={(event) => onChange(Math.max(1, Math.round(Number(event.target.value) * size)))} className="w-24 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5" aria-label={`${label} limit`} />
+    <select value={unit} onChange={(event) => setUnit(event.target.value as 'MB' | 'GB')} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5" aria-label={`${label} unit`}><option value="MB">MB</option><option value="GB">GB</option></select>
+  </span>;
+}
 
 function Section({ title, hint, children, aside }: { title: string; hint?: string; children: ReactNode; aside?: ReactNode }) {
   return <section className="rounded-2xl border border-slate-800/80 bg-slate-900/30 p-5">
@@ -74,7 +85,7 @@ export function PlanEditor({ applicationId, editing, copyOf, plans, features, co
       ...current.entitlements,
       [feature.id]: !on ? { feature_id: feature.id, enabled: false }
         : feature.supports_numeric_limit
-          ? { feature_id: feature.id, enabled: true, limit_type: 'limited', limit_value: 10, unit: feature.default_unit ?? 'units', reset_period: feature.allowed_reset_periods[0] ?? 'total' }
+          ? { feature_id: feature.id, enabled: true, limit_type: 'limited', limit_value: feature.default_unit === 'bytes' ? GB : 10, unit: feature.default_unit ?? 'units', reset_period: feature.allowed_reset_periods[0] ?? 'total' }
           : { feature_id: feature.id, enabled: true, limit_type: 'unlimited' },
     },
   }));
@@ -210,9 +221,11 @@ export function PlanEditor({ applicationId, editing, copyOf, plans, features, co
                             <Toggle label={feature.name} checked={on} onChange={(value) => toggleFeature(feature, value)} />
                           </div>
                           {on && feature.supports_numeric_limit && <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                            <div className="inline-flex rounded-lg border border-slate-800 p-0.5">{(['limited', 'unlimited'] as const).map((kind) => <button key={kind} type="button" onClick={() => patchFeature(feature.id, kind === 'limited' ? { limit_type: 'limited', limit_value: item.limit_value ?? 10, unit: feature.default_unit ?? 'units', reset_period: item.reset_period ?? feature.allowed_reset_periods[0] ?? 'total' } : { limit_type: 'unlimited', limit_value: undefined, unit: undefined, reset_period: undefined })} className={`rounded-md px-3 py-1 text-xs ${item.limit_type === kind ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>{kind === 'limited' ? 'Up to' : 'Unlimited'}</button>)}</div>
-                            {item.limit_type === 'limited' && <><input type="number" min={1} value={item.limit_value ?? ''} onChange={(event) => patchFeature(feature.id, { limit_value: Number(event.target.value) })} className="w-28 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5" aria-label={`${feature.name} limit`} /><span className="text-slate-400">{feature.default_unit}</span>
-                              {feature.allowed_reset_periods.length > 1 ? <select value={item.reset_period} onChange={(event) => patchFeature(feature.id, { reset_period: event.target.value as ResetPeriod })} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5">{feature.allowed_reset_periods.map((period) => <option key={period} value={period}>{RESET_LABEL[period]}</option>)}</select> : <span className="text-slate-500">{item.reset_period ? RESET_LABEL[item.reset_period] : ''}</span>}</>}
+                            <div className="inline-flex rounded-lg border border-slate-800 p-0.5">{(['limited', 'unlimited'] as const).map((kind) => <button key={kind} type="button" onClick={() => patchFeature(feature.id, kind === 'limited' ? { limit_type: 'limited', limit_value: item.limit_value ?? (feature.default_unit === 'bytes' ? GB : 10), unit: feature.default_unit ?? 'units', reset_period: item.reset_period ?? feature.allowed_reset_periods[0] ?? 'total' } : { limit_type: 'unlimited', limit_value: undefined, unit: undefined, reset_period: undefined })} className={`rounded-md px-3 py-1 text-xs ${item.limit_type === kind ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>{kind === 'limited' ? 'Up to' : 'Unlimited'}</button>)}</div>
+                            {item.limit_type === 'limited' && <>{feature.default_unit === 'bytes'
+                                ? <ByteLimit label={feature.name} bytes={item.limit_value} onChange={(bytes) => patchFeature(feature.id, { limit_value: bytes })} />
+                                : <><input type="number" min={1} value={item.limit_value ?? ''} onChange={(event) => patchFeature(feature.id, { limit_value: Number(event.target.value) })} className="w-28 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5" aria-label={`${feature.name} limit`} />{feature.default_unit && /[a-z]/i.test(feature.default_unit) && <span className="text-slate-400">{feature.default_unit}</span>}</>}
+                              {feature.allowed_reset_periods.length > 1 ? <select value={item.reset_period} onChange={(event) => patchFeature(feature.id, { reset_period: event.target.value as ResetPeriod })} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5" aria-label={`${feature.name} period`}>{feature.allowed_reset_periods.map((period) => <option key={period} value={period}>{RESET_OPTION_LABEL[period]}</option>)}</select> : <span className="text-slate-500">{item.reset_period ? RESET_LABEL[item.reset_period] : ''}</span>}</>}
                           </div>}
                         </div>;
                       })}
