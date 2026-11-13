@@ -150,6 +150,37 @@ export async function archiveApplication(applicationId: string) {
   await controlApi.post(`/apps/${applicationId}/archive`);
 }
 
+export type MonitorAlert = {
+  id: string; kind: string; severity: 'low' | 'medium' | 'high' | 'critical'; status: 'open' | 'acknowledged' | 'resolved';
+  title: string; detail: Record<string, unknown>; occurrences: number; first_seen_at: string; last_seen_at: string;
+  acknowledged_at: string | null; resolved_at: string | null;
+};
+export type HealthState = 'healthy' | 'degraded' | 'critical' | 'unknown';
+export type MonitoringData = {
+  latest: { status: HealthState; backend: HealthState; website: HealthState; latency_ms: number | null; summary: string | null; checked_at: string } | null;
+  uptime_24h: number | null;
+  checks_24h: number;
+  timeline: Array<{ at: string; status: HealthState; latency_ms: number | null }>;
+  alerts: MonitorAlert[];
+  event_counts_24h: Record<string, number>;
+  recent_events: Array<{ type: string; severity: string; tenant_id: string | null; actor_ref: string | null; ip: string | null; path: string | null; occurred_at: string }>;
+};
+
+export async function getMonitoring(applicationId: string) {
+  const { data } = await controlApi.get<MonitoringData>(`/apps/${applicationId}/monitoring`);
+  return data;
+}
+
+export async function handleMonitorAlert(applicationId: string, alertId: string, action: 'acknowledge' | 'resolve') {
+  const { data } = await controlApi.post<MonitorAlert>(`/apps/${applicationId}/monitoring/alerts/${alertId}/${action}`);
+  return data;
+}
+
+export async function runMonitorCheck(applicationId: string) {
+  const { data } = await controlApi.post<{ checked: number }>(`/apps/${applicationId}/monitoring/check-now`);
+  return data;
+}
+
 export async function getApplicationOverview(applicationId: string) {
   const { data } = await controlApi.get<ApplicationOverviewData>(
     `/apps/${applicationId}/overview`,

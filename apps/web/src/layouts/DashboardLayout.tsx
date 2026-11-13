@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Activity,
   BarChart3,
   Bell,
   ChevronDown,
@@ -22,6 +23,7 @@ function cn(...inputs: ClassValue[]) {
 
 const navigation = [
   { name: 'Overview', path: 'overview', icon: LayoutDashboard },
+  { name: 'Monitoring', path: 'monitoring', icon: Activity },
   { name: 'Users', path: 'users', icon: Users },
   { name: 'Subscriptions', path: 'subscriptions', icon: CreditCard },
   { name: 'Coupons', path: 'coupons', icon: Ticket },

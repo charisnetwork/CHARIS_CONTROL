@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     razorpay_key_secret: SecretStr = SecretStr("")
     razorpay_webhook_secret: SecretStr = SecretStr("")
     reporting_adapters: dict[uuid.UUID, ReportingAdapter] = Field(default_factory=dict)
+    # Background monitor: health checks and security rules for every active application.
+    monitor_enabled: bool = False
+    monitor_interval_seconds: int = Field(default=300, ge=60, le=3600)
 
     @model_validator(mode="after")
     def validate_razorpay(self) -> "Settings":

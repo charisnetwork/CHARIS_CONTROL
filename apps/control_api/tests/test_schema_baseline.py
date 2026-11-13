@@ -65,10 +65,14 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
         baseline.metadata.tables["subscription_plans"].append_column(Column(name, String()))
     # 20261111_0008 adds the quarterly and half-yearly reset periods after monthly.
     assert (
-        Path(__file__).parents[1]
-        / "alembic/versions/20261111_0008_quarterly_half_yearly_limits.py"
+        Path(__file__).parents[1] / "alembic/versions/20261111_0008_quarterly_half_yearly_limits.py"
     ).exists()
     added_enum_values = {"reset_period": ["quarterly", "half_yearly"]}
+    # 20261113_0009 adds the monitor's tables; test_monitoring_postgres exercises them on a
+    # database built by the migrations, so their shape is taken from the models here.
+    assert (Path(__file__).parents[1] / "alembic/versions/20261113_0009_monitoring.py").exists()
+    for name in ("security_events", "monitor_alerts"):
+        Base.metadata.tables[name].to_metadata(baseline.metadata)
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

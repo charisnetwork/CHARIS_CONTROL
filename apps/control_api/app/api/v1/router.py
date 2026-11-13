@@ -6,6 +6,8 @@ from app.domains.applications.router import router as applications_router
 from app.domains.catalog.router import router as catalog_router
 from app.domains.coupons.router import router as coupons_router
 from app.domains.governance.router import router as governance_router
+from app.domains.monitoring.router import integration_router as monitoring_integration_router
+from app.domains.monitoring.router import router as monitoring_router
 from app.domains.notifications.router import router as notifications_router
 from app.domains.overview.router import router as overview_router
 from app.domains.payments.integration import router as customer_payments_router
@@ -33,6 +35,8 @@ api_v1_router.include_router(settings_router)
 api_v1_router.include_router(integration_router)
 api_v1_router.include_router(subscription_integration_router)
 api_v1_router.include_router(payments_router)
+api_v1_router.include_router(monitoring_router)
+api_v1_router.include_router(monitoring_integration_router)
 api_v1_router.include_router(customer_payments_router)
 
 __all__ = ["api_v1_router"]

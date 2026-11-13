@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -41,7 +42,17 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        monitor = None
+        if current_settings.monitor_enabled:
+            from app.db.session import SessionFactory
+            from app.domains.monitoring.service import monitor_forever
+
+            monitor = asyncio.create_task(
+                monitor_forever(SessionFactory, current_settings.monitor_interval_seconds)
+            )
         yield
+        if monitor is not None:
+            monitor.cancel()
         await current_engine.dispose()
 
     is_production = current_settings.environment.casefold() == "production"

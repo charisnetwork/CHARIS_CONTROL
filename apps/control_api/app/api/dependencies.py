@@ -5,12 +5,12 @@ import hmac
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AccessTokenClaims, TokenValidationError, decode_access_token
@@ -126,16 +126,56 @@ async def get_current_user(
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 
+async def _record_rejected_key(
+    db: AsyncSession, app_id: uuid.UUID, request: Request, reason: str, prefix: str | None
+) -> None:
+    """A rejected app key means that app cannot check plans: keep a capped trail for the monitor."""
+    from app.db.models import SecurityEvent
+
+    try:
+        since = datetime.now(UTC) - timedelta(minutes=10)
+        exists = await db.scalar(select(Application.id).where(Application.id == app_id))
+        recent = await db.scalar(
+            select(func.count())
+            .select_from(SecurityEvent)
+            .where(
+                SecurityEvent.application_id == app_id,
+                SecurityEvent.event_type == "integration_auth_failed",
+                SecurityEvent.occurred_at >= since,
+            )
+        )
+        if exists is None or (recent or 0) >= 200:
+            return
+        db.add(
+            SecurityEvent(
+                id=uuid.uuid4(),
+                application_id=app_id,
+                event_type="integration_auth_failed",
+                severity="high",
+                ip_address=request.client.host if request.client else None,
+                path=request.url.path[:255],
+                detail={"reason": reason, "key_prefix": prefix},
+                occurred_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 - recording must never change the 401
+        await db.rollback()
+
+
 async def require_integration_credential(
     app_id: uuid.UUID,
+    request: Request,
     db: DatabaseSession,
     api_key: Annotated[str | None, Header(alias="X-Charis-App-Key")] = None,
 ) -> IntegrationAuthorization:
     if not api_key or "." not in api_key:
+        await _record_rejected_key(db, app_id, request, "missing", None)
         raise _unauthorized("Application credential is required")
-    prefix = api_key.split(".", 1)[0]
+    prefix = api_key.split(".", 1)[0][:32]
     row = (await db.execute(integration_credential_statement(app_id, prefix))).first()
     if row is None:
+        await _record_rejected_key(db, app_id, request, "unknown or revoked key", prefix)
         raise _unauthorized("Invalid application credential")
     application, credential = row
     now = datetime.now(UTC)
@@ -143,11 +183,13 @@ async def require_integration_credential(
         credential.status == CredentialStatus.GRACE
         and (credential.grace_ends_at is None or credential.grace_ends_at <= now)
     ):
+        await _record_rejected_key(db, app_id, request, "expired key", prefix)
         raise _unauthorized("Expired application credential")
     supplied_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
     if credential.secret_hash is None or not hmac.compare_digest(
         supplied_hash, credential.secret_hash
     ):
+        await _record_rejected_key(db, app_id, request, "wrong secret", prefix)
         raise _unauthorized("Invalid application credential")
     return IntegrationAuthorization(application=application, credential=credential)
 

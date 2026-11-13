@@ -1247,6 +1247,68 @@ class WebhookDelivery(IdMixin, ApplicationScopedMixin, TimestampMixin, Base):
     )
 
 
+class SecurityEvent(IdMixin, ApplicationScopedMixin, Base):
+    """A security event reported by an application (failed login, cross-tenant probe...)."""
+
+    __tablename__ = "security_events"
+
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(255))
+    actor_ref: Mapped[str | None] = mapped_column(String(255))
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    path: Mapped[str | None] = mapped_column(String(255))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_security_events_app_occurred", "application_id", "occurred_at"),
+        Index("ix_security_events_app_type", "application_id", "event_type", "occurred_at"),
+        Index("ix_security_events_app_ip", "application_id", "ip_address", "occurred_at"),
+    )
+
+
+class MonitorAlert(IdMixin, ApplicationScopedMixin, Base):
+    """An open or past problem found by the monitor; one open alert per dedupe key."""
+
+    __tablename__ = "monitor_alerts"
+
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    occurrences: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("control_users.id", ondelete="SET NULL")
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'acknowledged', 'resolved')", name="monitor_alert_status"
+        ),
+        CheckConstraint(
+            "severity IN ('low', 'medium', 'high', 'critical')", name="monitor_alert_severity"
+        ),
+        Index(
+            "uq_monitor_alerts_open_key",
+            "application_id",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=sql_text("status <> 'resolved'"),
+        ),
+        Index("ix_monitor_alerts_app_seen", "application_id", "last_seen_at"),
+    )
+
+
 class AuditLog(IdMixin, ApplicationScopedMixin, Base):
     __tablename__ = "audit_logs"
 
@@ -1277,6 +1339,8 @@ __all__ = [
     "AppFeature",
     "Application",
     "AuditLog",
+    "MonitorAlert",
+    "SecurityEvent",
     "AuthSession",
     "Base",
     "ControlUser",

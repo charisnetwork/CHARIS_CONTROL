@@ -10,6 +10,7 @@ import {
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { Affiliates } from './pages/applications/Affiliates';
 import { ApplicationOverview } from './pages/applications/ApplicationOverview';
+import { Monitoring } from './pages/applications/Monitoring';
 import { ApplicationSelection } from './pages/applications/ApplicationSelection';
 import { Coupons } from './pages/applications/Coupons';
 import { Notifications } from './pages/applications/Notifications';
@@ -74,6 +75,7 @@ const router = createBrowserRouter([
             children: [
               { index: true, element: <Navigate to="overview" replace /> },
               { path: 'overview', element: <ApplicationOverview /> },
+              { path: 'monitoring', element: <Monitoring /> },
               { path: 'users', element: <Users /> },
               { path: 'subscribers', element: <Navigate to="../users" replace /> },
               { path: 'subscriptions', element: <SubscriptionsHub /> },
