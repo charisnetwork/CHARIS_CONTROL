@@ -29,9 +29,15 @@ class UserCounts(BaseModel):
 
 
 class UsageCounts(BaseModel):
-    projects: Count
-    photos: Count
-    photo_storage_bytes: Count
+    # Civil's original fields; other apps report their own numbers as metrics instead.
+    projects: Count = 0
+    photos: Count = 0
+    photo_storage_bytes: Count = 0
+
+
+class Metric(BaseModel):
+    label: str = Field(min_length=1, max_length=60)
+    value: Count
 
 
 class AppSummary(BaseModel):
@@ -39,7 +45,8 @@ class AppSummary(BaseModel):
     generated_at: datetime
     customers: CustomerCounts
     users: UserCounts
-    usage: UsageCounts
+    usage: UsageCounts = Field(default_factory=UsageCounts)
+    metrics: list[Metric] = Field(default_factory=list, max_length=8)
 
 
 class AppCustomer(BaseModel):
@@ -64,6 +71,8 @@ class AppCustomers(BaseModel):
     page_size: int = Field(ge=1, le=100)
     total: Count
     items: list[AppCustomer] = Field(max_length=100)
+    # What AppCustomer.projects counts for this app (e.g. "invoices"); Civil leaves it out.
+    count_label: str | None = Field(default=None, max_length=30)
 
 
 async def fetch_report[Result: BaseModel](
