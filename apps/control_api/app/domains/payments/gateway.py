@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import re
 from typing import Any
 
@@ -9,6 +10,12 @@ from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.domains.payments.schemas import ProviderOrder, ProviderPayment
+
+logger = logging.getLogger(__name__)
+
+
+class ProviderRejected(HTTPException):
+    """Razorpay answered 4xx: the request definitely did not take effect."""
 
 
 def payment_settings() -> Settings:
@@ -36,9 +43,30 @@ async def provider_request(method: str, path: str, payload: dict[str, object] | 
             auth=(settings.razorpay_key_id, settings.razorpay_key_secret.get_secret_value()),
         ) as client:
             response = await client.request(method, path, json=payload)
+            if 400 <= response.status_code < 500:
+                try:
+                    error = response.json().get("error", {})
+                except ValueError:
+                    error = {}
+                # Razorpay's own reason (e.g. "Authentication failed"); never the credentials.
+                logger.warning(
+                    "Razorpay %s %s refused: HTTP %s %s %s",
+                    method,
+                    path.split("/")[0],
+                    response.status_code,
+                    error.get("code", ""),
+                    error.get("description", ""),
+                )
+                raise ProviderRejected(
+                    status_code=502,
+                    detail="The payment provider refused the request. Please try again later.",
+                )
             response.raise_for_status()
             return response.json()
+    except ProviderRejected:
+        raise
     except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Razorpay %s %s failed: %s", method, path.split("/")[0], type(exc).__name__)
         raise HTTPException(
             status_code=502, detail="Payment provider unavailable; reconcile before retrying"
         ) from exc

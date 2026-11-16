@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import AuthenticatedUser
@@ -86,6 +86,7 @@ def checkout_view(record: RazorpayCheckout) -> dict[str, object]:
 
 
 CHECKOUT_EXPIRY = timedelta(hours=24)
+ORDERLESS_EXPIRY = timedelta(minutes=15)
 
 
 async def expire_stale_checkouts(
@@ -94,8 +95,10 @@ async def expire_stale_checkouts(
     application_id: uuid.UUID | None = None,
     subscriber_id: uuid.UUID | None = None,
     now: datetime | None = None,
+    checkout_id: uuid.UUID | None = None,
 ) -> int:
-    """Expire unpaid orders older than 24h: cancel the pending term, release its coupon.
+    """Expire unpaid orders older than 24h (15 min if no provider order was ever created):
+    cancel the pending term, release its coupon.
 
     A payment that still arrives later is recorded and flagged for review, never lost.
     The caller commits.
@@ -111,10 +114,24 @@ async def expire_stale_checkouts(
         .where(
             RazorpayCheckout.status.in_(["creating", "ready"]),
             RazorpayCheckout.provider_payment_id.is_(None),
-            RazorpayCheckout.created_at < now - CHECKOUT_EXPIRY,
         )
         .with_for_update(of=RazorpayCheckout)
     )
+    if checkout_id is not None:
+        # One checkout whose provider order was definitely refused: release it now.
+        statement = statement.where(RazorpayCheckout.id == checkout_id)
+    else:
+        statement = statement.where(
+            or_(
+                RazorpayCheckout.created_at < now - CHECKOUT_EXPIRY,
+                # Never got a provider order (refused or lost): nothing can be paid against it.
+                and_(
+                    RazorpayCheckout.status == "creating",
+                    RazorpayCheckout.provider_order_id.is_(None),
+                    RazorpayCheckout.created_at < now - ORDERLESS_EXPIRY,
+                ),
+            )
+        )
     if application_id is not None:
         statement = statement.where(RazorpayCheckout.application_id == application_id)
     if subscriber_id is not None:
@@ -340,9 +357,14 @@ async def start_checkout(
     # Persist before the external side effect. Ambiguous failures never retry creation blindly.
     await db.commit()
     await db.refresh(checkout)
-    order = await gateway.create_provider_order(
-        str(checkout.id), checkout.amount_minor, checkout.currency
-    )
+    try:
+        order = await gateway.create_provider_order(
+            str(checkout.id), checkout.amount_minor, checkout.currency
+        )
+    except gateway.ProviderRejected:
+        await expire_stale_checkouts(db, application_id=application_id, checkout_id=checkout.id)
+        await db.commit()
+        raise
     if not order_matches(order, checkout):
         raise HTTPException(status_code=502, detail="Provider order did not match the saved quote")
     locked = await db.scalar(

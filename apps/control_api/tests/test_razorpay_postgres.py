@@ -926,3 +926,46 @@ async def test_abandoned_checkout_expires_releases_coupon_and_late_payment_is_re
             )
             == 1
         )
+
+
+async def test_refused_provider_order_releases_checkout_at_once(environment, monkeypatch):
+    env = environment
+    working = gateway.create_provider_order
+
+    async def refused(*args):
+        raise gateway.ProviderRejected(status_code=502, detail="QA refused")
+
+    monkeypatch.setattr(gateway, "create_provider_order", refused)
+    with pytest.raises(gateway.ProviderRejected):
+        await begin(env)
+    async with env.sessions() as db:
+        saved = await db.scalar(
+            select(RazorpayCheckout).where(RazorpayCheckout.application_id == env.app.id)
+        )
+        assert saved.status == "expired"
+        assert (
+            await db.get(Subscription, saved.subscription_id)
+        ).status == SubscriptionStatus.CANCELLED
+    # Once the provider accepts again, the customer can pay straight away.
+    monkeypatch.setattr(gateway, "create_provider_order", working)
+    again = await begin(env, env.payload.model_copy(update={"idempotency_key": uuid.uuid4()}))
+    assert again.status == "ready"
+
+
+async def test_checkout_without_provider_order_expires_after_15_minutes(environment):
+    env = environment
+    from app.domains.payments.service import expire_stale_checkouts
+
+    checkout = await begin(env)
+    async with env.sessions() as db:
+        saved = await db.get(RazorpayCheckout, checkout.id)
+        saved.status, saved.provider_order_id = "creating", None
+        await db.commit()
+        assert await expire_stale_checkouts(db, application_id=env.app.id) == 0
+        saved.created_at = datetime.now(UTC) - timedelta(minutes=16)
+        await db.commit()
+    async with env.sessions() as db:
+        assert await expire_stale_checkouts(db, application_id=env.app.id) == 1
+        await db.commit()
+    async with env.sessions() as db:
+        assert (await db.get(RazorpayCheckout, checkout.id)).status == "expired"
