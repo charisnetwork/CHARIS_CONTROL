@@ -504,6 +504,8 @@ class SubscriptionService:
             starts_at=payload.starts_at,
             ends_at=ends_at,
             auto_renews=payload.auto_renews,
+            payment_provider="none" if Decimal(plan.price) == 0 else "razorpay",
+            billing_country=subscriber.billing_country,
             commercial_snapshot={
                 "plan_code": plan.code,
                 "plan_name": plan.name,

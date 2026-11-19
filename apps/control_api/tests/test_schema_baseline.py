@@ -73,6 +73,13 @@ def test_baseline_table_and_column_shape_matches_models() -> None:
     assert (Path(__file__).parents[1] / "alembic/versions/20261113_0009_monitoring.py").exists()
     for name in ("security_events", "monitor_alerts"):
         Base.metadata.tables[name].to_metadata(baseline.metadata)
+    # 20261119_0010 adds billing country and the payment provider.
+    assert (
+        Path(__file__).parents[1] / "alembic/versions/20261119_0010_billing_provider_country.py"
+    ).exists()
+    baseline.metadata.tables["subscribers"].append_column(Column("billing_country", String()))
+    for name in ("payment_provider", "billing_country"):
+        baseline.metadata.tables["subscriptions"].append_column(Column(name, String()))
     migration_tables = baseline.metadata.tables
     model_tables = Base.metadata.tables
 

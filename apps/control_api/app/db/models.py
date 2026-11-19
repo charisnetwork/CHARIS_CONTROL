@@ -505,6 +505,8 @@ class Subscriber(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionMixin, 
     joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     profile_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ISO country of the customer's office, published by the app; routes checkout by country.
+    billing_country: Mapped[str | None] = mapped_column(String(2))
     # Set together with status=suspended when an operator blocks the account.
     restricted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     restriction_reason: Mapped[str | None] = mapped_column(Text)
@@ -530,6 +532,11 @@ class Subscription(IdMixin, ApplicationScopedMixin, TimestampMixin, VersionMixin
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     auto_renews: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Who collected the money (razorpay now; a merchant of record abroad later), and where.
+    payment_provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="razorpay", server_default="razorpay"
+    )
+    billing_country: Mapped[str | None] = mapped_column(String(2))
     commercial_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     entitlement_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
 

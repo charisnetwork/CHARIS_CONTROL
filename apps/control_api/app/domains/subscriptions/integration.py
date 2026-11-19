@@ -58,6 +58,7 @@ class TenantProfile(BaseModel):
     team_size: int | None = Field(default=None, ge=0, le=1_000_000)
     joined_at: datetime | None = None
     last_active_at: datetime | None = None
+    country_code: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
 
     def column_values(self) -> dict[str, Any]:
         """Subscriber columns to write; profile fields an app does not send are left as they are."""
@@ -68,6 +69,8 @@ class TenantProfile(BaseModel):
                 exclude_unset=True,
             )
         )
+        if "country_code" in self.model_fields_set and self.country_code:
+            values["billing_country"] = self.country_code.upper()
         if "owner" in self.model_fields_set:
             owner = self.owner
             values.update(
@@ -410,6 +413,8 @@ async def subscription_catalog(
             {
                 "id": str(plan.id),
                 "name": item.display_label or plan.name,
+                # Apps recognise special plans by code (e.g. govt_site_roads_drains).
+                "code": plan.code,
                 "description": plan.description,
                 "price": str(plan.price),
                 "currency": plan.currency,
