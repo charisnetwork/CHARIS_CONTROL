@@ -57,7 +57,17 @@ async def get_overview(
             plans=counts.plans,
             active_coupons=counts.active_coupons,
         ),
-        latest_health=LatestHealth.model_validate(health, from_attributes=True) if health else None,
+        # Health rows name the overall status "overall_status"; map it explicitly.
+        latest_health=LatestHealth(
+            status=health.overall_status,
+            frontend_status=health.frontend_status,
+            backend_status=health.backend_status,
+            database_status=health.database_status,
+            latency_ms=health.latency_ms,
+            checked_at=health.checked_at,
+        )
+        if health
+        else None,
         data_sources={
             "control_centre": True,
             "application_adapter": False,
