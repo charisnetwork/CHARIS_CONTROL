@@ -7,11 +7,12 @@ from typing import Any, Self
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 
 from app.api.dependencies import DatabaseSession, IntegrationCredential
 from app.core.config import get_settings
 from app.db.models import (
+    DurationUnit,
     PlanUiItem,
     RazorpayCheckout,
     Subscriber,
@@ -259,6 +260,20 @@ async def activate_free_plan(
     ).all()
     if any(t.ends_at is None or t.ends_at > now for t in terms):
         raise HTTPException(status_code=409, detail="A plan is already active for this account")
+    plan = await db.get(SubscriptionPlan, payload.plan_id)
+    # A free plan measured in days is the trial: once per customer, never after any other plan.
+    if plan is not None and plan.duration_unit == DurationUnit.DAY:
+        earlier = await db.scalar(
+            select(func.count())
+            .select_from(Subscription)
+            .where(
+                Subscription.application_id == app_id,
+                Subscription.subscriber_id == subscriber.id,
+                Subscription.status != SubscriptionStatus.PENDING,
+            )
+        )
+        if earlier:
+            raise HTTPException(status_code=409, detail="The free trial has already been used")
     for term in terms:  # Lapsed terms are recorded as expired before the free term starts.
         term.status = SubscriptionStatus.EXPIRED
         term.version += 1

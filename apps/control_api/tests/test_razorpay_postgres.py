@@ -969,3 +969,68 @@ async def test_checkout_without_provider_order_expires_after_15_minutes(environm
         await db.commit()
     async with env.sessions() as db:
         assert (await db.get(RazorpayCheckout, checkout.id)).status == "expired"
+
+
+async def test_day_plan_trial_is_given_once_and_never_after_another_plan(environment, monkeypatch):
+    env = environment
+    async with env.sessions() as db:
+        trial = SubscriptionPlan(
+            application_id=env.app.id,
+            name="QA Trial",
+            code="qa_trial",
+            price=Decimal("0"),
+            currency="INR",
+            duration_value=14,
+            duration_unit=DurationUnit.DAY,
+            status=PlanStatus.ACTIVE,
+            effective_at=datetime.now(UTC) - timedelta(days=1),
+            user_limit_unlimited=True,
+        )
+        db.add(trial)
+        config = PlanUiConfig(application_id=env.app.id)
+        db.add(config)
+        await db.flush()
+        db.add(
+            PlanUiItem(
+                application_id=env.app.id,
+                config_id=config.id,
+                plan_id=trial.id,
+                visible=True,
+                display_order=0,
+            )
+        )
+        await db.commit()
+
+    def disabled():
+        raise HTTPException(status_code=503, detail="Payments disabled")
+
+    monkeypatch.setattr(gateway, "payment_settings", disabled)
+    app = FastAPI()
+    app.include_router(customer_router)
+
+    async def session():
+        async with env.sessions() as db:
+            yield db
+
+    app.dependency_overrides[get_db_session] = session
+    app.dependency_overrides[require_integration_credential] = lambda: SimpleNamespace(
+        application_id=env.app.id
+    )
+    path = f"/integrations/apps/{env.app.id}/tenants/{env.subscriber.external_id}"
+
+    def order():
+        return {"plan_id": str(trial.id), "idempotency_key": str(uuid.uuid4()), "actor_id": "o"}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post(path + "/checkout/orders", json=order())).status_code == 201
+        async with env.sessions() as db:
+            term = await db.scalar(
+                select(Subscription).where(Subscription.application_id == env.app.id)
+            )
+            assert term.ends_at - term.starts_at == timedelta(days=14)
+            term.starts_at = datetime.now(UTC) - timedelta(days=15)  # Trial over.
+            term.ends_at = datetime.now(UTC) - timedelta(days=1)
+            await db.commit()
+        again = await client.post(path + "/checkout/orders", json=order())
+        assert again.status_code == 409
+        assert again.json()["detail"] == "The free trial has already been used"
