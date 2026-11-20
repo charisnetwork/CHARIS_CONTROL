@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Archive, Copy, Eye, EyeOff, MoreHorizontal, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Archive, Copy, Eye, EyeOff, Gift, MoreHorizontal, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
   apiErrorMessage,
@@ -21,6 +21,7 @@ import { Toggle } from '../../../components/Toggle';
 import { Subscriptions } from '../Subscriptions';
 import { PlanCard } from './PlanCard';
 import { PlanEditor } from './PlanEditor';
+import { FeatureRollout } from './FeatureRollout';
 import { PlanArtworkImage } from './planVisuals';
 import { cardOffer, featureDetail, resolveVisuals } from './planModel';
 
@@ -60,6 +61,7 @@ export function SubscriptionsHub() {
   const tab = (TABS.some((item) => item.key === params.get('tab')) ? params.get('tab') : 'plans') as Tab;
   const [editor, setEditor] = useState<{ plan: SubscriptionPlan | null; copy: SubscriptionPlan | null } | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [rollout, setRollout] = useState<SubscriptionPlan | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [openedAt] = useState(() => Date.now());
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -123,8 +125,9 @@ export function SubscriptionsHub() {
           {isOwner && <div className="relative flex items-center gap-1">
             <button onClick={() => setEditor({ plan, copy: null })} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium hover:border-blue-500/60"><Pencil className="h-3.5 w-3.5" />Edit</button>
             <button aria-label={`More actions for ${plan.name}`} onClick={() => setMenu(menu === plan.id ? null : plan.id)} className="rounded-lg border border-slate-700 p-1.5 hover:border-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
-            <AnimatePresence>{menu === plan.id && <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute bottom-10 right-0 z-20 w-56 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 py-1 text-sm shadow-2xl">
+            <AnimatePresence>{menu === plan.id && <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute bottom-10 right-0 z-20 w-72 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 py-1 text-sm shadow-2xl">
               <button onClick={() => { setMenu(null); setEditor({ plan: null, copy: plan }); }} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-800"><Copy className="h-4 w-4" />Duplicate (e.g. yearly version)</button>
+              <button onClick={() => { setMenu(null); setRollout(plan); }} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-800"><Gift className="h-4 w-4" />Give new features to existing customers</button>
               {plan.status === 'active' && <button onClick={() => action.mutate({ plan, kind: shown ? 'hide' : 'show' })} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-800">{shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{shown ? 'Hide from plan page' : 'Show on plan page'}</button>}
               <button onClick={() => { if (window.confirm(`Archive ${plan.name}? It leaves the plan page. Customers already on it keep it until their term ends.`)) action.mutate({ plan, kind: 'archive' }); }} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-800"><Archive className="h-4 w-4" />Archive</button>
               <button onClick={() => { if (window.confirm(`Delete ${plan.name} permanently? Only plans no customer, coupon or notification has used can be deleted.`)) action.mutate({ plan, kind: 'delete' }); }} className="flex w-full items-center gap-2 px-3 py-2 text-red-300 hover:bg-slate-800"><Trash2 className="h-4 w-4" />Delete</button>
@@ -197,6 +200,7 @@ export function SubscriptionsHub() {
         if (published && !wasLive) setCelebrate(true);
         setNotice((current) => current?.kind === 'error' ? current : { kind: 'ok', text: published ? (wasLive ? `${plan.name} updated. Apps pick up the change within a minute.` : `${plan.name} is live! It appears in ${application.displayName} within a minute.`) : `${plan.name} saved as a draft.` });
       }} />}
+    {rollout && appId && <FeatureRollout applicationId={appId} plan={rollout} onClose={() => setRollout(null)} onDone={(text) => { setRollout(null); setNotice({ kind: 'ok', text }); }} />}
     {celebrate && <Confetti onDone={() => setCelebrate(false)} />}
   </div>;
 }

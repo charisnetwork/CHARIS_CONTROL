@@ -133,3 +133,46 @@ __all__ = [
     "UsageConsumeRequest",
     "UsageConsumeResponse",
 ]
+
+
+class FeatureChange(BaseModel):
+    feature_code: str
+    feature_name: str
+    change: Literal["add", "raise"]
+    current: str
+    new: str
+
+
+class FeatureRolloutSubscriber(BaseModel):
+    subscription_id: uuid.UUID
+    subscriber_id: uuid.UUID
+    name: str
+    email: str | None
+    status: str
+    ends_at: datetime | None
+    changes: list[FeatureChange]
+
+
+class FeatureRolloutFeature(BaseModel):
+    feature_code: str
+    feature_name: str
+    grant: str
+
+
+class FeatureRolloutPreview(BaseModel):
+    plan_id: uuid.UUID
+    plan_name: str
+    features: list[FeatureRolloutFeature]
+    subscribers: list[FeatureRolloutSubscriber]
+
+
+class FeatureRolloutApply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subscription_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    feature_codes: list[str] = Field(min_length=1, max_length=200)
+
+
+class FeatureRolloutResult(BaseModel):
+    updated_subscriptions: int
+    features_added: int

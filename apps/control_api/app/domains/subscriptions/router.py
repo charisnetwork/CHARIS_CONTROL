@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, Request, status
 
 from app.api.dependencies import AppAuthorization, DatabaseSession, require_app_permission
 from app.db.models import AppPermission
+from app.domains.subscriptions.feature_rollout import feature_rollout_service
 from app.domains.subscriptions.schemas import (
+    FeatureRolloutApply,
+    FeatureRolloutPreview,
+    FeatureRolloutResult,
     SubscriberCreate,
     SubscriberRead,
     SubscriptionCreate,
@@ -161,6 +165,42 @@ async def consume_usage(
         idempotent_replay=replay,
         period_start=period_start,
         period_end=period_end,
+    )
+
+
+@router.get("/plans/{plan_id}/feature-rollout", response_model=FeatureRolloutPreview)
+async def preview_feature_rollout(
+    plan_id: uuid.UUID,
+    authorization: ViewSubscriptions,
+    db: DatabaseSession,
+) -> FeatureRolloutPreview:
+    """Customers on the plan and the plan features they don't have yet."""
+    return FeatureRolloutPreview.model_validate(
+        await feature_rollout_service.preview(
+            db, application_id=authorization.application_id, plan_id=plan_id
+        )
+    )
+
+
+@router.post("/plans/{plan_id}/feature-rollout", response_model=FeatureRolloutResult)
+async def apply_feature_rollout(
+    plan_id: uuid.UUID,
+    payload: FeatureRolloutApply,
+    request: Request,
+    authorization: ManageSubscriptions,
+    db: DatabaseSession,
+) -> FeatureRolloutResult:
+    """Gives chosen customers chosen plan features. Only adds; never removes or lowers."""
+    return FeatureRolloutResult.model_validate(
+        await feature_rollout_service.apply(
+            db,
+            application_id=authorization.application_id,
+            plan_id=plan_id,
+            principal=authorization.principal,
+            subscription_ids=payload.subscription_ids,
+            feature_codes=payload.feature_codes,
+            correlation_id=_correlation_id(request),
+        )
     )
 
 

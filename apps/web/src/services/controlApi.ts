@@ -346,6 +346,45 @@ export async function replacePlanEntitlements(applicationId: string, planId: str
   return data;
 }
 
+export interface FeatureRolloutChange {
+  feature_code: string;
+  feature_name: string;
+  change: 'add' | 'raise';
+  current: string;
+  new: string;
+}
+
+export interface FeatureRolloutPreview {
+  plan_id: string;
+  plan_name: string;
+  features: Array<{ feature_code: string; feature_name: string; grant: string }>;
+  subscribers: Array<{
+    subscription_id: string;
+    subscriber_id: string;
+    name: string;
+    email: string | null;
+    status: string;
+    ends_at: string | null;
+    changes: FeatureRolloutChange[];
+  }>;
+}
+
+/** Customers on a plan and the plan features they don't have yet (sold before they were added). */
+export async function previewFeatureRollout(applicationId: string, planId: string): Promise<FeatureRolloutPreview> {
+  const { data } = await controlApi.get<FeatureRolloutPreview>(`/apps/${applicationId}/plans/${planId}/feature-rollout`);
+  return data;
+}
+
+/** Gives the chosen customers the chosen plan features. Only adds; never removes or lowers. */
+export async function applyFeatureRollout(
+  applicationId: string,
+  planId: string,
+  payload: { subscription_ids: string[]; feature_codes: string[] },
+): Promise<{ updated_subscriptions: number; features_added: number }> {
+  const { data } = await controlApi.post(`/apps/${applicationId}/plans/${planId}/feature-rollout`, payload);
+  return data;
+}
+
 export async function deletePlan(applicationId: string, planId: string): Promise<void> {
   await controlApi.delete(`/apps/${applicationId}/plans/${planId}`);
 }
